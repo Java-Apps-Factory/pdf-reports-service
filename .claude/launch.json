@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "report-service-h2",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "exec $(/usr/libexec/java_home -v 11)/bin/java -jar report-service/target/report-service.war --spring.profiles.active=h2"],
+      "port": 8080
+    },
+    {
+      "name": "report-service-h2-mock-sib",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": ["-c", "cd report-service && SIB_BUS=ReportBus SIB_ENDPOINTS=was-staging:7276:BootstrapBasicMessaging exec $(/usr/libexec/java_home -v 11)/bin/java -cp target/classes:target/test-classes:$(cat target/run-classpath.txt) com.example.reporting.ReportServiceApplication --spring.profiles.active=h2,sib,sib-spike --server.port=8081"],
+      "port": 8081
+    }
+  ]
+}
