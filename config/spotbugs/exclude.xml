@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclusions. SPEC section 19: every entry must carry a justification.
+-->
+<FindBugsFilter>
+    <!--
+      Spring injects shared, container-managed collaborators (JdbcTemplate, ConnectionFactory, Clock,
+      @ConfigurationProperties beans) through constructors. Storing those references is the intended
+      design, not a leak of internal representation.
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+</FindBugsFilter>

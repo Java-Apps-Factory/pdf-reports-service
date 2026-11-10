@@ -1,0 +1,7 @@
+-- ShedLock lock table for singleton jobs (SPEC sections 9 and 15).
+CREATE TABLE SHEDLOCK (
+  NAME       VARCHAR(64)  NOT NULL PRIMARY KEY,
+  LOCK_UNTIL TIMESTAMP    NOT NULL,
+  LOCKED_AT  TIMESTAMP    NOT NULL,
+  LOCKED_BY  VARCHAR(255) NOT NULL
+);

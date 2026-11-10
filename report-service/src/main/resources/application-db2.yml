@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:db2://${DB2_HOST}:${DB2_PORT}/${DB2_DATABASE}
+    username: ${DB2_USER}
+    password: ${DB2_PASSWORD}
+    driver-class-name: com.ibm.db2.jcc.DB2Driver
+reporting:
+  db:
+    now-query: SELECT CURRENT TIMESTAMP FROM SYSIBM.SYSDUMMY1

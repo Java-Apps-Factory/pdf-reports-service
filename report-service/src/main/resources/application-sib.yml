@@ -1,0 +1,7 @@
+reporting:
+  sib:
+    bus-name: ${SIB_BUS}
+    provider-endpoints: ${SIB_ENDPOINTS}     # host:7276:BootstrapBasicMessaging[,...]
+    target-transport-chain: InboundBasicMessaging
+    username: ${SIB_USER:}
+    password: ${SIB_PASSWORD:}

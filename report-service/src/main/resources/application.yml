@@ -1,0 +1,75 @@
+# Defaults for all profiles (SPEC section 16).
+reporting:
+  node-id: ${HOSTNAME:local-node}            # lease owner name; must be unique per node
+  business-zone: America/New_York
+  db:
+    now-query: SELECT CURRENT_TIMESTAMP      # overridden in application-db2.yml
+  generation:
+    workers: 4
+    poll-interval: 5s
+    lease-duration: 15m
+    max-attempts: 3
+    backoff: { initial: 1m, multiplier: 2.0, max: 30m }
+    fetch-size: 500
+    temp-dir: ${java.io.tmpdir}/fips-reports
+  transmission:
+    workers: 2
+    poll-interval: 5s
+    lease-duration: 5m
+    in-process: { attempts: 3, initial: 2s, multiplier: 2.0, max: 10s }
+    max-attempts: 8
+    backoff: { initial: 1m, multiplier: 2.0, max: 1h }
+    queue-name: REPORT.OUT.QUEUE
+  retention:
+    content-days: 90
+    purge-cron: "0 30 3 * * *"
+  fonts:
+    regular: classpath:fonts/NotoSans-Regular.ttf
+    bold: classpath:fonts/NotoSans-Bold.ttf
+    italic: classpath:fonts/NotoSans-Italic.ttf
+  color-profile: classpath:color/sRGB.icc
+  tagging-enabled: false                     # true from Phase 5
+  states:
+    VA:
+      enabled: true
+      cron: "0 0 2 * * *"
+      title: "Commonwealth of Virginia – Locality Report"
+      subtitle: "Virginia"
+      footer-disclaimer: "Official use only. Generated automatically; do not edit."
+      empty-category-message: "No content to display in this category."
+      logo:
+        resource: classpath:branding/placeholder-logo.png
+        alt-text: "Placeholder agency logo"
+      columns:
+        - { key: caseNumber,  label: "Case Number", type: TEXT,     width: 14, wrap: false }
+        - { key: lastName,    label: "Last Name",   type: TEXT,     width: 14, wrap: true }
+        - { key: firstName,   label: "First Name",  type: TEXT,     width: 14, wrap: true }
+        - { key: eventDate,   label: "Event Date",  type: DATE,     width: 10, wrap: false }
+        - { key: amount,      label: "Amount",      type: CURRENCY, width: 11, wrap: false }
+        - { key: status,      label: "Status",      type: TEXT,     width: 10, wrap: false }
+        - { key: description, label: "Description", type: TEXT,     width: 27, wrap: true }
+      category-columns: {}                   # optional: categoryCode -> column list override
+
+spring:
+  application:
+    name: report-service
+  flyway:
+    locations: classpath:db/migration/common,classpath:db/migration/{vendor}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  datasource:
+    hikari:
+      maximum-pool-size: 12                  # generation workers + send workers + 6
+      leak-detection-threshold: 1200000      # 20 min in ms (Hikari takes a long); above the generation lease
+  task:
+    scheduling:
+      pool:
+        size: 6
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

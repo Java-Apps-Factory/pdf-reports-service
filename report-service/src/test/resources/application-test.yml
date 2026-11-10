@@ -1,0 +1,10 @@
+# Test overrides: private in-memory database and a small dev data set.
+spring:
+  datasource:
+    url: jdbc:h2:mem:reportdb;MODE=DB2;DATABASE_TO_UPPER=TRUE;DB_CLOSE_DELAY=-1
+reporting:
+  dev:
+    seed-records: 600
+logging:
+  level:
+    org.apache.activemq.audit: WARN

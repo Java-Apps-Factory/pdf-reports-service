@@ -1,0 +1,9 @@
+# Local development: H2 in DB2 mode plus an embedded Artemis broker.
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/reportdb;MODE=DB2;DATABASE_TO_UPPER=TRUE;AUTO_SERVER=TRUE
+  artemis:
+    mode: embedded
+reporting:
+  dev:
+    seed-records: 5000
