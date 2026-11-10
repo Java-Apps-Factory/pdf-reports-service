@@ -11,4 +11,22 @@
     <Match>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!--
+      report-pdf-core internals: FontFace.font() and Canvas.stream() hand out the document-scoped PDFBox
+      font and content stream on purpose, so painters can draw with them. Both objects belong to one
+      single-threaded writer and are never shared across documents (SPEC section 10).
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Or>
+            <And>
+                <Class name="com.example.reporting.pdf.text.FontFace"/>
+                <Method name="font"/>
+            </And>
+            <And>
+                <Class name="com.example.reporting.pdf.layout.Canvas"/>
+                <Method name="stream"/>
+            </And>
+        </Or>
+    </Match>
 </FindBugsFilter>
