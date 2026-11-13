@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Document-level layout and content of one report: page geometry, fonts, logo, title block lines, running
@@ -33,6 +34,7 @@ public final class DocumentSpec {
     private final String language;
     private final int summaryRowCount;
     private final boolean taggingEnabled;
+    private final byte[] outputIntentProfile;
     private final String logContext;
 
     private DocumentSpec(Builder b) {
@@ -61,6 +63,10 @@ public final class DocumentSpec {
         }
         this.summaryRowCount = b.summaryRowCount;
         this.taggingEnabled = b.taggingEnabled;
+        this.outputIntentProfile = b.outputIntentProfile == null ? null : b.outputIntentProfile.clone();
+        if (taggingEnabled && (outputIntentProfile == null || outputIntentProfile.length == 0)) {
+            throw new IllegalArgumentException("Tagged (PDF/A-2a) output needs an sRGB ICC output intent profile");
+        }
         this.logContext = Objects.requireNonNull(b.logContext, "logContext");
     }
 
@@ -236,6 +242,15 @@ public final class DocumentSpec {
     }
 
     /**
+     * Returns a copy of the ICC profile used as PDF/A output intent.
+     *
+     * @return the profile, present whenever tagging is on
+     */
+    public Optional<byte[]> outputIntentProfile() {
+        return Optional.ofNullable(outputIntentProfile).map(byte[]::clone);
+    }
+
+    /**
      * Returns a non-sensitive identifier for log messages, such as the FIPS code. Never record content.
      *
      * @return log context, possibly empty
@@ -272,6 +287,7 @@ public final class DocumentSpec {
         private String language = "en-US";
         private int summaryRowCount;
         private boolean taggingEnabled;
+        private byte[] outputIntentProfile;
         private String logContext = "";
 
         private Builder() {
@@ -436,6 +452,17 @@ public final class DocumentSpec {
          */
         public Builder taggingEnabled(boolean value) {
             this.taggingEnabled = value;
+            return this;
+        }
+
+        /**
+         * Sets the sRGB ICC profile embedded as the PDF/A output intent; required when tagging is on.
+         *
+         * @param iccProfile ICC profile bytes
+         * @return this builder
+         */
+        public Builder outputIntentProfile(byte[] iccProfile) {
+            this.outputIntentProfile = iccProfile == null ? null : iccProfile.clone();
             return this;
         }
 

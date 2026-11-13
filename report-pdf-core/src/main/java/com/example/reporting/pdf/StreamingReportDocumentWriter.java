@@ -3,6 +3,8 @@ package com.example.reporting.pdf;
 import com.example.reporting.pdf.a11y.TaggingContext;
 import com.example.reporting.pdf.a11y.TaggingContext.ArtifactType;
 import com.example.reporting.pdf.a11y.TaggingContext.Role;
+import com.example.reporting.pdf.a11y.TaggingContext.Slot;
+import com.example.reporting.pdf.a11y.XmpMetadataWriter;
 import com.example.reporting.pdf.decorate.PageDecorator;
 import com.example.reporting.pdf.decorate.SectionHeading;
 import com.example.reporting.pdf.layout.Canvas;
@@ -12,11 +14,13 @@ import com.example.reporting.pdf.layout.PageCursor;
 import com.example.reporting.pdf.layout.PageGeometry;
 import com.example.reporting.pdf.outline.BookmarkBuilder;
 import com.example.reporting.pdf.table.CellValue;
+import com.example.reporting.pdf.table.RowKind;
 import com.example.reporting.pdf.table.RowLayout;
 import com.example.reporting.pdf.table.TableRenderer;
 import com.example.reporting.pdf.text.FontFace;
 import com.example.reporting.pdf.text.LoadedFonts;
 import com.example.reporting.pdf.text.TextWrapper;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.System.Logger.Level;
@@ -32,6 +36,7 @@ import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
 import org.apache.pdfbox.pdmodel.interactive.viewerpreferences.PDViewerPreferences;
 
 /** Pass 1 of the two-pass engine: lays out sections and rows page by page as they stream in. */
@@ -41,6 +46,10 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
 
     /** Smallest body height that must remain on page 1 below the reserved summary area. */
     static final float MIN_PAGE_ONE_BODY = 72f;
+
+    private static final String CREATOR = "report-pdf-core";
+    private static final String SRGB = "sRGB IEC61966-2.1";
+    private static final float PDF_VERSION = 1.7f;
 
     private enum State { OPEN, IN_SECTION, FINISHED, CLOSED }
 
@@ -52,6 +61,7 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
     private final TableRenderer tableRenderer;
     private final List<SectionHeading> headings = new ArrayList<>();
     private final List<Integer> sectionFirstPages = new ArrayList<>();
+    private final Slot frontMatter;
 
     private State state = State.OPEN;
     private PageCursor cursor;
@@ -70,6 +80,7 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
     private long sectionRows;
     private int headingPage;
     private float headingTop;
+    private Slot headingSlot;
 
     StreamingReportDocumentWriter(DocumentSpec spec, Path workDir, TaggingContext tagging) throws IOException {
         this.spec = Objects.requireNonNull(spec, "spec");
@@ -88,6 +99,8 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
             addPage();
             cursor = new PageCursor(1, geometry.bodyTop(1), geometry.bodyBottom());
             cursor.advance(summaryHeight);
+            tagging.beginStructure(Role.DOCUMENT);
+            this.frontMatter = tagging.reserveSlot();
         } catch (IOException | RuntimeException e) {
             document.close();
             throw e;
@@ -109,6 +122,7 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
         this.sectionRows = 0;
         this.state = State.IN_SECTION;
         tagging.beginStructure(Role.SECT);
+        this.headingSlot = tagging.reserveSlot();
     }
 
     @Override
@@ -125,7 +139,7 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
         }
         RowLayout row = RowLayout.of(section.table(), clean, columnWidths, regular.measurer());
         if (!sectionStarted) {
-            startSection(row.height());
+            startSection(row.height(), true);
         }
         if (sectionRows == 0) {
             tagging.beginStructure(Role.TBODY);
@@ -140,7 +154,7 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
             throw new IllegalStateException("The empty message needs a section without rows or message");
         }
         if (!sectionStarted) {
-            startSection(LayoutMetrics.emptyMessageHeight());
+            startSection(LayoutMetrics.emptyMessageHeight(), false);
         }
         if (!cursor.fits(LayoutMetrics.emptyMessageHeight())) {
             continuePage();
@@ -164,11 +178,11 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
     public void endSection() throws IOException {
         requireState(State.IN_SECTION);
         if (!sectionStarted) {
-            startSection(0f);
+            startSection(0f, false);
         }
         closeTable();
         tagging.endStructure();
-        headings.add(new SectionHeading(headingPage, headingTop, section.headingFor(sectionRows)));
+        headings.add(new SectionHeading(headingPage, headingTop, section.headingFor(sectionRows), headingSlot));
         section = null;
         state = State.OPEN;
     }
@@ -184,7 +198,9 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
         }
         stream.close();
         stream = null;
-        new PageDecorator(geometry, fonts, tagging).decorate(document, spec, summary, headings);
+        tagging.endStructure();
+        new PageDecorator(geometry, fonts, tagging).decorate(document, spec, summary, headings, frontMatter);
+        tagging.finish(document);
         BookmarkBuilder bookmarks = new BookmarkBuilder().add(summary.heading(), 1, geometry.bodyTop(1));
         for (SectionHeading heading : headings) {
             bookmarks.add(heading.text(), heading.pageNumber(), heading.top());
@@ -222,7 +238,11 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
         }
     }
 
-    private void startSection(float firstContentHeight) throws IOException {
+    /**
+     * Places the heading and the header row. A table with rows is tagged Table → THead (+ TBody later); an empty
+     * table has only its header row, tagged Table → TR, because PDF/UA does not allow a THead without a TBody.
+     */
+    private void startSection(float firstContentHeight, boolean hasRows) throws IOException {
         boolean atTop = cursor.isAtTop();
         if (KeepTogetherPolicy.startsOnNewPage(cursor, LayoutMetrics.headingBlockHeight(atTop),
                 headerRow.height(), firstContentHeight)) {
@@ -238,10 +258,14 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
         cursor.advance(LayoutMetrics.HEADING_LEADING + LayoutMetrics.HEADING_SPACE_BELOW);
         tagging.beginStructure(Role.TABLE);
         tableOpen = true;
-        tagging.beginStructure(Role.THEAD);
+        if (hasRows) {
+            tagging.beginStructure(Role.THEAD);
+        }
         tableRenderer.drawRow(canvas, page, geometry.contentLeft(), cursor.y(), columnWidths, headerRow,
-                fonts.bold(), LayoutMetrics.HEADER_FILL_GRAY, Role.TH, false);
-        tagging.endStructure();
+                fonts.bold(), LayoutMetrics.HEADER_FILL_GRAY, RowKind.HEADER);
+        if (hasRows) {
+            tagging.endStructure();
+        }
         cursor.advance(headerRow.height());
         pageHasRows = false;
         sectionStarted = true;
@@ -263,7 +287,7 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
         rowsWritten++;
         float fill = sectionRows % 2 == 0 ? LayoutMetrics.EVEN_ROW_FILL_GRAY : TableRenderer.NO_FILL;
         tableRenderer.drawRow(canvas, page, geometry.contentLeft(), cursor.y(), columnWidths, row,
-                fonts.regular(), fill, Role.TD, false);
+                fonts.regular(), fill, RowKind.DATA);
         cursor.advance(row.height());
         pageHasRows = true;
     }
@@ -281,7 +305,7 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
         tagging.endArtifact(stream);
         cursor.advance(LayoutMetrics.continuationHeight());
         tableRenderer.drawRow(canvas, page, geometry.contentLeft(), cursor.y(), columnWidths, headerRow,
-                fonts.bold(), LayoutMetrics.HEADER_FILL_GRAY, Role.TH, true);
+                fonts.bold(), LayoutMetrics.HEADER_FILL_GRAY, RowKind.REPEATED_HEADER);
         cursor.advance(headerRow.height());
     }
 
@@ -311,17 +335,33 @@ final class StreamingReportDocumentWriter implements ReportDocumentWriter {
         tableOpen = false;
     }
 
-    private void applyMetadata() {
+    private void applyMetadata() throws IOException {
         PDDocumentInformation info = document.getDocumentInformation();
         info.setTitle(spec.metadataTitle());
-        info.setSubject(spec.subject());
-        info.setAuthor(spec.author());
-        info.setCreator("report-pdf-core");
+        // Only non-blank entries: PDF/A requires every Info entry to match the XMP metadata.
+        info.setSubject(blankToNull(spec.subject()));
+        info.setAuthor(blankToNull(spec.author()));
+        info.setCreator(CREATOR);
         PDDocumentCatalog catalog = document.getDocumentCatalog();
         catalog.setLanguage(spec.language());
         PDViewerPreferences preferences = new PDViewerPreferences(new COSDictionary());
         preferences.setDisplayDocTitle(true);
         catalog.setViewerPreferences(preferences);
+        if (spec.taggingEnabled()) {
+            document.setVersion(PDF_VERSION);
+            XmpMetadataWriter.write(document, spec.metadataTitle(), spec.subject(), spec.author(), CREATOR);
+            byte[] profile = spec.outputIntentProfile().orElseThrow();
+            PDOutputIntent intent = new PDOutputIntent(document, new ByteArrayInputStream(profile));
+            intent.setInfo(SRGB);
+            intent.setOutputCondition(SRGB);
+            intent.setOutputConditionIdentifier(SRGB);
+            intent.setRegistryName("http://www.color.org");
+            catalog.addOutputIntent(intent);
+        }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     private void requireState(State expected) {

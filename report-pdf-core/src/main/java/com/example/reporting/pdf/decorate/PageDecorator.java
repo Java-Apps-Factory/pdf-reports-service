@@ -4,6 +4,7 @@ import com.example.reporting.pdf.DocumentSpec;
 import com.example.reporting.pdf.SummaryData;
 import com.example.reporting.pdf.a11y.TaggingContext;
 import com.example.reporting.pdf.a11y.TaggingContext.Role;
+import com.example.reporting.pdf.a11y.TaggingContext.Slot;
 import com.example.reporting.pdf.layout.Canvas;
 import com.example.reporting.pdf.layout.LayoutMetrics;
 import com.example.reporting.pdf.layout.PageGeometry;
@@ -58,10 +59,11 @@ public final class PageDecorator {
      * @param spec document spec with header and footer texts
      * @param summary summary rows for page 1
      * @param headings section headings placed in pass 1
+     * @param frontMatter structure slot for the title block and summary, reserved in pass 1
      * @throws IOException on a stream error
      */
-    public void decorate(PDDocument document, DocumentSpec spec, SummaryData summary, List<SectionHeading> headings)
-            throws IOException {
+    public void decorate(PDDocument document, DocumentSpec spec, SummaryData summary, List<SectionHeading> headings,
+            Slot frontMatter) throws IOException {
         int pageCount = document.getNumberOfPages();
         for (int pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
             PDPage page = document.getPage(pageNumber - 1);
@@ -69,8 +71,10 @@ public final class PageDecorator {
                     true)) {
                 Canvas canvas = new Canvas(stream);
                 if (pageNumber == 1) {
+                    tagging.resumeSlot(frontMatter);
                     titleBlock.paint(document, page, canvas, spec);
                     summaryPainter.paint(page, canvas, summary);
+                    tagging.endSlot();
                 } else {
                     runningHeader.paint(canvas, pageNumber, spec.runningHeaderLeft(), spec.runningHeaderRight());
                 }
@@ -90,9 +94,11 @@ public final class PageDecorator {
         String text = TextWrapper.truncate(bold.sanitize(heading.text()), bold.measurer(), size,
                 geometry.contentWidth());
         float baseline = LayoutMetrics.baseline(heading.top(), LayoutMetrics.HEADING_LEADING, size);
+        tagging.resumeSlot(heading.slot());
         tagging.beginStructure(Role.H2);
         float left = geometry.contentLeft();
         tagging.markContent(canvas.stream(), page, () -> canvas.text(bold.font(), size, left, baseline, text));
         tagging.endStructure();
+        tagging.endSlot();
     }
 }

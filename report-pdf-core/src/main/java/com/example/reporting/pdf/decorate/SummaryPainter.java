@@ -9,6 +9,7 @@ import com.example.reporting.pdf.layout.PageGeometry;
 import com.example.reporting.pdf.table.Alignment;
 import com.example.reporting.pdf.table.CellValue;
 import com.example.reporting.pdf.table.ColumnSpec;
+import com.example.reporting.pdf.table.RowKind;
 import com.example.reporting.pdf.table.RowLayout;
 import com.example.reporting.pdf.table.TableRenderer;
 import com.example.reporting.pdf.table.TableSpec;
@@ -23,7 +24,8 @@ import org.apache.pdfbox.pdmodel.PDPage;
 
 /**
  * Draws the summary into the area reserved on page 1: heading, a Category/Records table with one row per
- * category and a bold total row (SPEC section 11). Internal to report-pdf-core.
+ * category and a bold total row whose label is a row header (SPEC sections 11 and 12). Internal to
+ * report-pdf-core.
  */
 public final class SummaryPainter {
 
@@ -85,7 +87,7 @@ public final class SummaryPainter {
         RowLayout header = RowLayout.of(table, List.of(CellValue.of(bold.sanitize(summary.labelHeader())),
                 CellValue.of(bold.sanitize(summary.countHeader()))), widths, bold.measurer());
         tableRenderer.drawRow(canvas, page, left, y, widths, header, bold, LayoutMetrics.HEADER_FILL_GRAY,
-                Role.TH, false);
+                RowKind.HEADER);
         y -= header.height();
         tagging.endStructure();
 
@@ -96,12 +98,12 @@ public final class SummaryPainter {
             RowLayout layout = RowLayout.of(table, List.of(CellValue.of(regular.sanitize(row.label())),
                     CellValue.of(counts.format(row.count()))), widths, regular.measurer());
             float fill = index % 2 == 0 ? LayoutMetrics.EVEN_ROW_FILL_GRAY : TableRenderer.NO_FILL;
-            tableRenderer.drawRow(canvas, page, left, y, widths, layout, regular, fill, Role.TD, false);
+            tableRenderer.drawRow(canvas, page, left, y, widths, layout, regular, fill, RowKind.DATA);
             y -= layout.height();
         }
         RowLayout total = RowLayout.of(table, List.of(CellValue.of(bold.sanitize(summary.totalLabel())),
                 CellValue.of(counts.format(summary.total()))), widths, bold.measurer());
-        tableRenderer.drawRow(canvas, page, left, y, widths, total, bold, TableRenderer.NO_FILL, Role.TD, false);
+        tableRenderer.drawRow(canvas, page, left, y, widths, total, bold, TableRenderer.NO_FILL, RowKind.TOTAL);
         tagging.endStructure();
         tagging.endStructure();
         tagging.endStructure();

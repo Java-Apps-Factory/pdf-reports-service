@@ -1,6 +1,7 @@
 package com.example.reporting.pdf;
 
 import com.example.reporting.pdf.a11y.NoOpTaggingContext;
+import com.example.reporting.pdf.a11y.PdfUaTaggingContext;
 import com.example.reporting.pdf.a11y.TaggingContext;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,22 +16,19 @@ public final class ReportDocumentWriters {
 
     /**
      * Opens a new writer. Page content is buffered in temp files under {@code workDir}, which is created if it
-     * does not exist; the temp files are deleted when the writer is closed.
+     * does not exist; the temp files are deleted when the writer is closed. With tagging on, the output is
+     * PDF/UA-1 and PDF/A-2a (SPEC section 12).
      *
      * @param spec the document-level layout and content
      * @param workDir directory for temp files
      * @return a new single-use writer
      * @throws IOException if the directory or the fonts cannot be set up
-     * @throws UnsupportedOperationException if tagging is requested; PDF/UA tagging arrives in Phase 5
      */
     public static ReportDocumentWriter open(DocumentSpec spec, Path workDir) throws IOException {
         Objects.requireNonNull(spec, "spec");
         Objects.requireNonNull(workDir, "workDir");
-        if (spec.taggingEnabled()) {
-            throw new UnsupportedOperationException("PDF/UA tagging is not implemented yet (SPEC Phase 5)");
-        }
         Files.createDirectories(workDir);
-        TaggingContext tagging = new NoOpTaggingContext();
+        TaggingContext tagging = spec.taggingEnabled() ? new PdfUaTaggingContext() : new NoOpTaggingContext();
         return new StreamingReportDocumentWriter(spec, workDir, tagging);
     }
 }

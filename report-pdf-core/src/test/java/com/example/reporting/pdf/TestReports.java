@@ -7,6 +7,8 @@ import com.example.reporting.pdf.table.TableSpec;
 import com.example.reporting.pdf.text.FontSet;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.color.ColorSpace;
+import java.awt.color.ICC_Profile;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -36,6 +38,7 @@ public final class TestReports {
     private static final String[] FIRST_NAMES = {"Avery", "Blake", "Casey", "Devon", "Emery", "Finley",
         "Gray", "Harper", "Indy", "Jordan"};
     private static final FontSet FONTS = loadFonts();
+    private static final Path ICC = Paths.get("..", "report-service", "src", "main", "resources", "color", "sRGB.icc");
 
     private TestReports() {
     }
@@ -50,12 +53,27 @@ public final class TestReports {
     }
 
     /**
-     * Returns a small generated PNG logo.
+     * Returns the sRGB output-intent profile: the bundled {@code color/sRGB.icc} once it is provided, otherwise
+     * the JDK's built-in sRGB profile (test stand-in only; nothing is bundled from the JDK).
+     *
+     * @return ICC profile bytes
+     */
+    public static byte[] iccProfile() {
+        try {
+            return Files.exists(ICC) ? Files.readAllBytes(ICC)
+                    : ICC_Profile.getInstance(ColorSpace.CS_sRGB).getData();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Returns a small generated PNG logo with an alpha channel (flattened by the writer).
      *
      * @return PNG bytes
      */
     public static byte[] logo() {
-        BufferedImage image = new BufferedImage(120, 60, BufferedImage.TYPE_INT_RGB);
+        BufferedImage image = new BufferedImage(120, 60, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
         g.setColor(Color.WHITE);
         g.fillRect(0, 0, 120, 60);
@@ -91,6 +109,7 @@ public final class TestReports {
                 .reportId(REPORT_ID)
                 .metadata(TITLE + " FIPS 51059", "FIPS 51059", "Test Agency")
                 .summaryRowCount(summaryRows)
+                .outputIntentProfile(iccProfile())
                 .logContext("51059");
     }
 

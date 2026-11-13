@@ -215,9 +215,10 @@ class StreamingReportDocumentWriterTest {
     }
 
     @Test
-    void taggingIsNotAvailableBeforePhaseFive() {
-        assertThatThrownBy(() -> ReportDocumentWriters.open(TestReports.spec(1).taggingEnabled(true).build(),
-                workDir)).isInstanceOf(UnsupportedOperationException.class);
+    void taggedOutputNeedsAnOutputIntentProfile() {
+        assertThatThrownBy(() -> TestReports.spec(1).taggingEnabled(true).outputIntentProfile(null).build())
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("ICC");
+        assertThat(TestReports.spec(1).build().outputIntentProfile()).isPresent();
     }
 
     @Test

@@ -33,6 +33,7 @@
         <pdfbox.version>3.0.5</pdfbox.version>
         <shedlock.version>4.48.0</shedlock.version>
         <db2-jcc.version>11.5.9.0</db2-jcc.version>
+        <verapdf.version>1.26.5</verapdf.version>
 
         <!-- Quality plugins: newest lines that still run on Java 11 -->
         <maven-checkstyle-plugin.version>3.4.0</maven-checkstyle-plugin.version>
@@ -67,6 +68,11 @@
                 <groupId>net.javacrumbs.shedlock</groupId>
                 <artifactId>shedlock-provider-jdbc-template</artifactId>
                 <version>${shedlock.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.verapdf</groupId>
+                <artifactId>validation-model</artifactId>
+                <version>${verapdf.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.ibm.db2</groupId>

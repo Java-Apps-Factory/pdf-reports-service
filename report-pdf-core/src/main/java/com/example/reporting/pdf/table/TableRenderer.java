@@ -3,6 +3,7 @@ package com.example.reporting.pdf.table;
 import com.example.reporting.pdf.a11y.TaggingContext;
 import com.example.reporting.pdf.a11y.TaggingContext.ArtifactType;
 import com.example.reporting.pdf.a11y.TaggingContext.Role;
+import com.example.reporting.pdf.a11y.TaggingContext.Scope;
 import com.example.reporting.pdf.layout.Canvas;
 import com.example.reporting.pdf.layout.LayoutMetrics;
 import com.example.reporting.pdf.text.FontFace;
@@ -14,8 +15,8 @@ import org.apache.pdfbox.pdmodel.PDPage;
 /**
  * Draws laid-out table rows: optional fill, cell borders and aligned text. Internal to report-pdf-core.
  *
- * <p>Fills and borders are layout artifacts. Cell text is tagged as {@code TH} or {@code TD} inside a
- * {@code TR}, unless the whole row is an artifact (a repeated header row on a continuation page).
+ * <p>Fills and borders are layout artifacts. Cell text is tagged as {@code TH} (with a scope) or {@code TD}
+ * inside a {@code TR}, unless the whole row is an artifact (a repeated header row on a continuation page).
  */
 public final class TableRenderer {
 
@@ -44,12 +45,11 @@ public final class TableRenderer {
      * @param row the laid-out row
      * @param face font face for the text
      * @param fillGray background gray level, or {@link #NO_FILL}
-     * @param cellRole {@link Role#TH} or {@link Role#TD}; ignored when {@code artifact} is true
-     * @param artifact true to draw the whole row as a pagination artifact
+     * @param kind how the row is tagged
      * @throws IOException on a stream error
      */
     public void drawRow(Canvas canvas, PDPage page, float left, float top, float[] columnWidths, RowLayout row,
-            FontFace face, float fillGray, Role cellRole, boolean artifact) throws IOException {
+            FontFace face, float fillGray, RowKind kind) throws IOException {
         float height = row.height();
         float width = sum(columnWidths);
         tagging.beginArtifact(canvas.stream(), ArtifactType.LAYOUT);
@@ -64,7 +64,7 @@ public final class TableRenderer {
         }
         tagging.endArtifact(canvas.stream());
 
-        if (artifact) {
+        if (kind == RowKind.REPEATED_HEADER) {
             tagging.beginArtifact(canvas.stream(), ArtifactType.PAGINATION);
             drawCells(canvas, left, top, columnWidths, row, face);
             tagging.endArtifact(canvas.stream());
@@ -75,7 +75,7 @@ public final class TableRenderer {
         for (int i = 0; i < row.cellCount(); i++) {
             final float cellX = cellLeft;
             final int column = i;
-            tagging.beginStructure(cellRole);
+            openCell(kind, i);
             float cellWidth = columnWidths[i];
             tagging.markContent(canvas.stream(), page, () -> drawCell(canvas, cellX, top, cellWidth,
                     row.lines(column), row.alignment(column), face));
@@ -83,6 +83,16 @@ public final class TableRenderer {
             cellLeft += columnWidths[i];
         }
         tagging.endStructure();
+    }
+
+    private void openCell(RowKind kind, int column) {
+        if (kind == RowKind.HEADER) {
+            tagging.beginHeaderCell(Scope.COLUMN);
+        } else if (kind == RowKind.TOTAL && column == 0) {
+            tagging.beginHeaderCell(Scope.ROW);
+        } else {
+            tagging.beginStructure(Role.TD);
+        }
     }
 
     private static void drawCells(Canvas canvas, float left, float top, float[] columnWidths, RowLayout row,

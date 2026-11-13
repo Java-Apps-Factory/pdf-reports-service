@@ -1,5 +1,6 @@
 package com.example.reporting.pdf.decorate;
 
+import com.example.reporting.pdf.a11y.TaggingContext.Slot;
 import java.util.Objects;
 
 /**
@@ -11,6 +12,7 @@ public final class SectionHeading {
     private final int pageNumber;
     private final float top;
     private final String text;
+    private final Slot slot;
 
     /**
      * Creates a placed heading.
@@ -18,14 +20,25 @@ public final class SectionHeading {
      * @param pageNumber 1-based page the heading is on
      * @param top y of the top of the heading line
      * @param text resolved heading text (unsanitized)
+     * @param slot structure position of the heading, reserved in pass 1 before the section's table
      */
-    public SectionHeading(int pageNumber, float top, String text) {
+    public SectionHeading(int pageNumber, float top, String text, Slot slot) {
         if (pageNumber < 1) {
             throw new IllegalArgumentException("pageNumber must be >= 1");
         }
         this.pageNumber = pageNumber;
         this.top = top;
         this.text = Objects.requireNonNull(text, "text");
+        this.slot = Objects.requireNonNull(slot, "slot");
+    }
+
+    /**
+     * Returns the structure slot of the heading.
+     *
+     * @return slot
+     */
+    public Slot slot() {
+        return slot;
     }
 
     /**

@@ -52,13 +52,12 @@ public final class TitleBlockPainter {
     public void paint(PDDocument document, PDPage page, Canvas canvas, DocumentSpec spec) throws IOException {
         float top = geometry.headerTop();
         float left = geometry.contentLeft();
-        paintLogo(document, page, canvas, spec, left, top);
-
         float textLeft = left + LayoutMetrics.LOGO_MAX_WIDTH + LayoutMetrics.LOGO_GAP;
         float textWidth = geometry.contentLeft() + geometry.contentWidth() - textLeft;
-        float lineTop = top;
-        lineTop = line(page, canvas, Role.H1, fonts.bold(), LayoutMetrics.TITLE_SIZE, spec.title(), textLeft,
-                lineTop, textWidth);
+        // Reading order of SPEC section 12: title (H1), logo (Figure), then the other lines (P).
+        float lineTop = line(page, canvas, Role.H1, fonts.bold(), LayoutMetrics.TITLE_SIZE, spec.title(), textLeft,
+                top, textWidth);
+        paintLogo(document, page, canvas, spec, left, top);
         lineTop = line(page, canvas, Role.P, fonts.regular(), LayoutMetrics.SUBTITLE_SIZE, spec.subtitle(),
                 textLeft, lineTop, textWidth);
         lineTop = line(page, canvas, Role.P, fonts.bold(), LayoutMetrics.FIPS_LINE_SIZE, spec.fipsLine(),
@@ -77,7 +76,7 @@ public final class TitleBlockPainter {
 
     private void paintLogo(PDDocument document, PDPage page, Canvas canvas, DocumentSpec spec, float left,
             float top) throws IOException {
-        PDImageXObject logo = PDImageXObject.createFromByteArray(document, spec.logo(), "logo");
+        PDImageXObject logo = LogoImages.load(document, spec.logo());
         float scale = Math.min(LayoutMetrics.LOGO_MAX_WIDTH / logo.getWidth(),
                 LayoutMetrics.LOGO_MAX_HEIGHT / logo.getHeight());
         float width = logo.getWidth() * scale;
