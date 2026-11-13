@@ -18,6 +18,7 @@ public class ReferenceDataRepository {
     private final String allCategoriesSql;
     private final String localitySql;
     private final String statesSql;
+    private final String fipsCodesSql;
 
     /**
      * Creates the repository.
@@ -30,6 +31,7 @@ public class ReferenceDataRepository {
         this.allCategoriesSql = SqlResources.load("all-active-categories.sql");
         this.localitySql = SqlResources.load("fips-locality.sql");
         this.statesSql = SqlResources.load("states.sql");
+        this.fipsCodesSql = SqlResources.load("active-fips-codes.sql");
     }
 
     /**
@@ -67,6 +69,16 @@ public class ReferenceDataRepository {
     public Optional<String> localityName(String stateCode, String fipsCode) {
         return jdbc.query(localitySql, (rs, n) -> rs.getString("LOCALITY_NAME"), stateCode, fipsCode)
                 .stream().findFirst();
+    }
+
+    /**
+     * Returns the active FIPS codes of a state.
+     *
+     * @param stateCode state code
+     * @return codes
+     */
+    public Set<String> activeFipsCodes(String stateCode) {
+        return new HashSet<>(jdbc.query(fipsCodesSql, (rs, n) -> rs.getString(1).trim(), stateCode));
     }
 
     /**

@@ -1,10 +1,16 @@
-# Test overrides: private in-memory database and a small dev data set.
+# Test overrides: private in-memory database, a small dev data set, and fast pollers and jobs.
 spring:
   datasource:
-    url: jdbc:h2:mem:reportdb;MODE=DB2;DATABASE_TO_UPPER=TRUE;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:reportdb;MODE=DB2;DATABASE_TO_UPPER=TRUE;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
 reporting:
   dev:
     seed-records: 600
+  generation:
+    poll-interval: 200ms
+    temp-dir: target/fips-reports-test
+  jobs:
+    finalizer-interval: 500ms
+    lease-sweep-interval: 1s
 logging:
   level:
     org.apache.activemq.audit: WARN

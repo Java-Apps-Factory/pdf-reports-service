@@ -81,11 +81,15 @@ public final class TestProfiles {
     public static ReportingProperties properties(Map<String, StateProfile> states, Duration lease, Path tempDir) {
         return new ReportingProperties("node-1", ZoneId.of("America/New_York"),
                 new ReportingProperties.Db("SELECT CURRENT_TIMESTAMP"),
-                new ReportingProperties.Generation(lease, 500, tempDir),
+                new ReportingProperties.Generation(4, Duration.ofSeconds(5), lease, 3,
+                        new ReportingProperties.BackoffSettings(Duration.ofMinutes(1), 2.0, Duration.ofMinutes(30)),
+                        500, tempDir),
                 new ReportingProperties.Transmission("REPORT.OUT.QUEUE"),
                 new ReportingProperties.Fonts("classpath:fonts/NotoSans-Regular.ttf",
                         "classpath:fonts/NotoSans-Bold.ttf", "classpath:fonts/NotoSans-Italic.ttf"),
-                false, states, new ReportingProperties.Dev(0));
+                false, states,
+                new ReportingProperties.Jobs(true, Duration.ofSeconds(30), Duration.ofSeconds(60)),
+                new ReportingProperties.Dev(0));
     }
 
     /**
