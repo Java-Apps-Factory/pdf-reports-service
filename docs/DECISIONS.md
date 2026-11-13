@@ -183,6 +183,7 @@ path (`SibConnectionFactoryConfig` → `JmsReportTransmitter`).
 | 2026-11-13 | `reporting.tagging-enabled: true` in `application.yml`. | Section 21, Phase 5. |
 | 2026-11-13 | veraPDF `org.verapdf:validation-model` 1.26.5 (built for Java 8) is a test dependency of both modules. | Section 5: latest line that runs on Java 11. |
 | 2026-11-13 | **Risk for Phase 6:** the structure tree holds one element per cell in memory until save (100,000 rows × 7 columns ≈ 800,000 elements). PDFBox cannot stream the tree, so heap use grows with rows when tagging is on. The `perf` test must measure peak heap with tagging on against NFR-02/03. | Inherent in section 12's per-cell TD structure with PDFBox 3. |
+| 2026-11-13 | **PDF library stays Apache PDFBox 3.0** (decided by the project owner). iText was considered and rejected: every iText release from 5.0 on, including 5.5.13.x and iText 7/8 Core, is AGPL-3.0, which would require releasing this service's source to its network users unless a commercial licence is bought; iText 2.1.7 and older (MPL/LGPL) are obsolete and unmaintained. | PDFBox is Apache 2.0, matches SPEC sections 4–5 and already passes veraPDF for PDF/UA-1 and PDF/A-2a. |
 
 ### Phase 5 acceptance status
 

@@ -3,6 +3,7 @@ package com.example.reporting.orchestration;
 import com.example.reporting.data.FipsWorkload;
 import com.example.reporting.data.ReferenceDataRepository;
 import com.example.reporting.data.ReportDataProvider;
+import com.example.reporting.observability.ReportingMetrics;
 import com.example.reporting.profile.ProfileRegistry;
 import com.example.reporting.tracking.DbClock;
 import com.example.reporting.tracking.DocumentStatus;
@@ -44,6 +45,7 @@ public class ReportRunService {
     private final ReportDocumentRepository documents;
     private final RunStateLock stateLock;
     private final DbClock dbClock;
+    private final ReportingMetrics metrics;
 
     /**
      * Creates the service.
@@ -55,10 +57,11 @@ public class ReportRunService {
      * @param documents document repository
      * @param stateLock per-state run lock
      * @param dbClock database clock
+     * @param metrics meters
      */
     public ReportRunService(ReferenceDataRepository referenceData, ProfileRegistry profiles,
             ReportDataProvider dataProvider, ReportRunRepository runs, ReportDocumentRepository documents,
-            RunStateLock stateLock, DbClock dbClock) {
+            RunStateLock stateLock, DbClock dbClock, ReportingMetrics metrics) {
         this.referenceData = referenceData;
         this.profiles = profiles;
         this.dataProvider = dataProvider;
@@ -66,6 +69,7 @@ public class ReportRunService {
         this.documents = documents;
         this.stateLock = stateLock;
         this.dbClock = dbClock;
+        this.metrics = metrics;
     }
 
     /**
@@ -115,6 +119,7 @@ public class ReportRunService {
             run.moveTo(RunStatus.COMPLETED, now);
             stateLock.release(state, run.getRunId());
         }
+        metrics.runStarted(state, command.triggerType());
         LOG.info("Run {} started for state {} by {} trigger: {} documents, {} data errors", run.getRunId(), state,
                 command.triggerType(), created.size(), dataErrors);
         return run;

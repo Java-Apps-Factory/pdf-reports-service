@@ -73,3 +73,15 @@ management:
     web:
       exposure:
         include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true                        # /actuator/health/liveness and /readiness
+      group:
+        readiness:
+          include: readinessState,db,jms     # not ready before startup (Flyway) has finished, or without DB/JMS
+
+logging:
+  pattern:
+    # MDC keys set by the workers (SPEC section 18); never record values (NFR-13)
+    level: "%5p [node=%X{nodeId:-} run=%X{runId:-} doc=%X{docId:-} state=%X{stateCode:-} fips=%X{fipsCode:-}]"

@@ -1,5 +1,6 @@
 package com.example.reporting.orchestration;
 
+import com.example.reporting.observability.ReportingMetrics;
 import com.example.reporting.pdf.RenderResult;
 import com.example.reporting.profile.ReportingProperties;
 import com.example.reporting.rendering.FipsReportComposer;
@@ -46,6 +47,7 @@ public class GenerationWorker {
     private static final Logger LOG = LoggerFactory.getLogger(GenerationWorker.class);
     private static final double LEASE_WARNING_SHARE = 0.8;
     private static final char[] HEX = "0123456789abcdef".toCharArray();
+    private static final String UNKNOWN_STATE = "unknown";
 
     private final ReportDocumentRepository documents;
     private final ReportRunRepository runs;
@@ -60,6 +62,7 @@ public class GenerationWorker {
     private final int maxAttempts;
     private final Backoff backoff;
     private final String nodeId;
+    private final ReportingMetrics metrics;
 
     /**
      * Creates the worker.
@@ -73,11 +76,12 @@ public class GenerationWorker {
      * @param transactionManager transaction manager
      * @param events event publisher
      * @param properties reporting configuration
+     * @param metrics meters
      */
     public GenerationWorker(ReportDocumentRepository documents, ReportRunRepository runs,
             FipsReportComposer composer, ReportContentStore content, DocumentClaimRepository claims, DbClock dbClock,
             PlatformTransactionManager transactionManager, ApplicationEventPublisher events,
-            ReportingProperties properties) {
+            ReportingProperties properties, ReportingMetrics metrics) {
         this.documents = documents;
         this.runs = runs;
         this.composer = composer;
@@ -93,6 +97,7 @@ public class GenerationWorker {
         this.backoff = new Backoff(generation.getBackoff().getInitial(), generation.getBackoff().getMultiplier(),
                 generation.getBackoff().getMax());
         this.nodeId = properties.getNodeId();
+        this.metrics = metrics;
     }
 
     /**
@@ -115,8 +120,7 @@ public class GenerationWorker {
             MDC.put("runId", String.valueOf(run.getRunId()));
             MDC.put("stateCode", document.getStateCode());
             MDC.put("fipsCode", document.getFipsCode());
-            render(claim, document, run, file);
-            warnIfSlow(started);
+            render(claim, document, run, file, started);
         } catch (RuntimeException | IOException e) {
             recordFailure(claim, document, e);
         } finally {
@@ -125,7 +129,8 @@ public class GenerationWorker {
         }
     }
 
-    private void render(Claim claim, ReportDocument document, ReportRun run, Path file) throws IOException {
+    private void render(Claim claim, ReportDocument document, ReportRun run, Path file, long startedNanos)
+            throws IOException {
         Files.createDirectories(tempDir);
         MessageDigest digest = sha256();
         RenderResult result;
@@ -152,8 +157,11 @@ public class GenerationWorker {
             return true;
         });
         if (Boolean.TRUE.equals(stored)) {
-            LOG.info("Generated document {}: {} records, {} pages, {} bytes", document.getDocId(),
-                    facts.recordCount(), facts.pageCount(), facts.sizeBytes());
+            Duration took = Duration.ofNanos(System.nanoTime() - startedNanos);
+            metrics.documentGenerated(document.getStateCode(), took, facts.pageCount(), facts.sizeBytes());
+            LOG.info("Generated document {}: {} records, {} pages, {} bytes in {} ms", document.getDocId(),
+                    facts.recordCount(), facts.pageCount(), facts.sizeBytes(), took.toMillis());
+            warnIfSlow(took);
         } else {
             LOG.warn("Lease on document {} was lost before it could be stored; result discarded",
                     document.getDocId());
@@ -180,6 +188,8 @@ public class GenerationWorker {
                 LOG.error("Generation of document {} failed for good after attempt {}", claim.docId(), attempts,
                         failure);
             }
+            metrics.generationFailed(document == null ? UNKNOWN_STATE : document.getStateCode(),
+                    target == DocumentStatus.DATA_ERROR);
             if (!claims.markGenerationFailed(claim, target, nextAttempt,
                     GenerationFailureClassifier.describe(failure), now)) {
                 LOG.warn("Lease on document {} was lost; failure not recorded", claim.docId());
@@ -189,8 +199,7 @@ public class GenerationWorker {
         }
     }
 
-    private void warnIfSlow(long startedNanos) {
-        Duration took = Duration.ofNanos(System.nanoTime() - startedNanos);
+    private void warnIfSlow(Duration took) {
         if (took.toMillis() > lease.toMillis() * LEASE_WARNING_SHARE) {
             LOG.warn("Generation took {} s, more than 80% of the {} s lease", took.toSeconds(), lease.toSeconds());
         }

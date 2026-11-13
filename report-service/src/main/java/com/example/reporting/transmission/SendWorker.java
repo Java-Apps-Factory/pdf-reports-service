@@ -1,6 +1,7 @@
 package com.example.reporting.transmission;
 
 import com.example.reporting.PermanentTransmissionException;
+import com.example.reporting.observability.ReportingMetrics;
 import com.example.reporting.profile.ReportingProperties;
 import com.example.reporting.tracking.Backoff;
 import com.example.reporting.tracking.DbClock;
@@ -14,6 +15,7 @@ import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -53,6 +55,7 @@ public class SendWorker {
     private final int maxAttempts;
     private final ZoneId zone;
     private final String nodeId;
+    private final ReportingMetrics metrics;
 
     /**
      * Creates the worker.
@@ -64,10 +67,11 @@ public class SendWorker {
      * @param transmitter message sender
      * @param dbClock database clock
      * @param properties reporting configuration
+     * @param metrics meters
      */
     public SendWorker(ReportDocumentRepository documents, ReportRunRepository runs, ReportContentStore content,
             DocumentClaimRepository claims, ReportTransmitter transmitter, DbClock dbClock,
-            ReportingProperties properties) {
+            ReportingProperties properties, ReportingMetrics metrics) {
         this.documents = documents;
         this.runs = runs;
         this.content = content;
@@ -81,6 +85,7 @@ public class SendWorker {
         this.maxAttempts = settings.getMaxAttempts();
         this.zone = properties.getBusinessZone();
         this.nodeId = properties.getNodeId();
+        this.metrics = metrics;
     }
 
     /**
@@ -90,6 +95,7 @@ public class SendWorker {
      * @param claim the claim this node won
      */
     public void send(Claim claim) {
+        long started = System.nanoTime();
         ReportDocument document = null;
         try {
             MDC.put("nodeId", nodeId);
@@ -101,11 +107,13 @@ public class SendWorker {
             MDC.put("fipsCode", document.getFipsCode());
             if (claims.newerDocumentExists(claim.docId())) {
                 supersede(claim);
+                metrics.sendFinished(document.getStateCode(), "superseded", since(started));
                 return;
             }
             ReportMessage message = message(document);
             String messageId = retry.execute((RetryCallback<String, RuntimeException>) context ->
                     transmitter.send(message));
+            metrics.sendFinished(document.getStateCode(), "sent", since(started));
             if (claims.markSent(claim, messageId, dbClock.now())) {
                 LOG.info("Sent document {} ({} bytes), JMSMessageID={}", claim.docId(), message.size(), messageId);
             } else {
@@ -113,6 +121,9 @@ public class SendWorker {
                         claim.docId());
             }
         } catch (RuntimeException e) {
+            String state = document == null ? "unknown" : document.getStateCode();
+            metrics.sendFinished(state, "failed", since(started));
+            metrics.sendFailed(state, SendFailureClassifier.isPermanent(e));
             recordFailure(claim, document, e);
         } finally {
             MDC.clear();
@@ -169,6 +180,10 @@ public class SendWorker {
             LOG.error("Could not record the send failure of document {}; lease recovery will retry", claim.docId(),
                     e);
         }
+    }
+
+    private static Duration since(long startedNanos) {
+        return Duration.ofNanos(System.nanoTime() - startedNanos);
     }
 
     private String iso(Instant instant) {

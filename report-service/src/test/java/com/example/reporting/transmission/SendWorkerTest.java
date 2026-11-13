@@ -12,6 +12,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.example.reporting.observability.ReportingMetrics;
 import com.example.reporting.profile.TestProfiles;
 import com.example.reporting.tracking.DbClock;
 import com.example.reporting.tracking.DocumentClaimRepository;
@@ -23,6 +24,7 @@ import com.example.reporting.tracking.ReportDocumentRepository;
 import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
 import com.example.reporting.tracking.TriggerType;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -51,13 +53,14 @@ class SendWorkerTest {
     private final DocumentClaimRepository claims = mock(DocumentClaimRepository.class);
     private final ReportTransmitter transmitter = mock(ReportTransmitter.class);
     private final DbClock clock = mock(DbClock.class);
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private SendWorker worker;
     private ReportDocument document;
 
     @BeforeEach
     void setUp() {
         worker = new SendWorker(documents, runs, content, claims, transmitter, clock,
-                TestProfiles.virginiaProperties(Paths.get("tmp")));
+                TestProfiles.virginiaProperties(Paths.get("tmp")), new ReportingMetrics(meters));
         ReportRun run = ReportRun.start("VA", TriggerType.API, "jdoe", null, Instant.parse("2026-11-10T07:00:00Z"));
         ReflectionTestUtils.setField(run, "runId", 3L);
         document = ReportDocument.create(3L, "VA", "51059", DocumentStatus.PENDING, null, NOW);
@@ -98,6 +101,7 @@ class SendWorkerTest {
         verify(jms).setStringProperty(ReportMessageProperties.CONTENT_TYPE, "application/pdf");
         verify(jms).setIntProperty(ReportMessageProperties.SCHEMA_VERSION, 1);
         assertThat(message.getValue().size()).isEqualTo(PDF.length);
+        assertThat(meters.get("reporting.send.duration").tag("outcome", "sent").timer().count()).isEqualTo(1);
     }
 
     @Test
@@ -177,6 +181,9 @@ class SendWorkerTest {
         verify(transmitter, times(1)).send(any());
         verify(claims).markSendEnded(eq(CLAIM), eq(DocumentStatus.SEND_FAILED_FINAL), isNull(), anyString(),
                 eq(NOW));
+        assertThat(meters.counter("reporting.send.failures", "state", "VA", "classification", "permanent").count())
+                .isEqualTo(1);
+        assertThat(meters.get("reporting.send.duration").tag("outcome", "failed").timer().count()).isEqualTo(1);
     }
 
     @Test

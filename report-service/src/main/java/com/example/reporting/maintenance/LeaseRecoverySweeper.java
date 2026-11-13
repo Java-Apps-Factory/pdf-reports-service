@@ -1,5 +1,6 @@
 package com.example.reporting.maintenance;
 
+import com.example.reporting.observability.ReportingMetrics;
 import com.example.reporting.profile.ReportingProperties;
 import com.example.reporting.tracking.Backoff;
 import com.example.reporting.tracking.DbClock;
@@ -38,6 +39,7 @@ public class LeaseRecoverySweeper implements SchedulingConfigurer {
     private final Backoff backoff;
     private final int maxGenerationAttempts;
     private final Duration interval;
+    private final ReportingMetrics metrics;
 
     /**
      * Creates the sweeper.
@@ -46,9 +48,10 @@ public class LeaseRecoverySweeper implements SchedulingConfigurer {
      * @param dbClock database clock
      * @param locks ShedLock executor
      * @param properties reporting configuration
+     * @param metrics meters
      */
     public LeaseRecoverySweeper(DocumentClaimRepository claims, DbClock dbClock, LockingTaskExecutor locks,
-            ReportingProperties properties) {
+            ReportingProperties properties, ReportingMetrics metrics) {
         this.claims = claims;
         this.dbClock = dbClock;
         this.locks = locks;
@@ -56,6 +59,7 @@ public class LeaseRecoverySweeper implements SchedulingConfigurer {
         this.backoff = new Backoff(settings.getInitial(), settings.getMultiplier(), settings.getMax());
         this.maxGenerationAttempts = properties.getGeneration().getMaxAttempts();
         this.interval = properties.getJobs().getLeaseSweepInterval();
+        this.metrics = metrics;
     }
 
     @Override
@@ -86,6 +90,7 @@ public class LeaseRecoverySweeper implements SchedulingConfigurer {
             String error = "Lease of node " + lease.owner() + " expired while " + lease.status();
             if (claims.recoverLease(lease, target, nextAttempt, error, now)) {
                 recovered++;
+                metrics.leaseRecovered(lease.status() == DocumentStatus.SENDING ? "send" : "generation");
                 LOG.warn("Recovered expired lease of document {} held by {}: {} -> {}", lease.docId(), lease.owner(),
                         lease.status(), target);
             }

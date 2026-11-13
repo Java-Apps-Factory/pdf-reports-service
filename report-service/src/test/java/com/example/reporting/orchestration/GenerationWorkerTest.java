@@ -15,6 +15,7 @@ import com.example.reporting.data.ReferenceDataRepository;
 import com.example.reporting.data.ReportCategory;
 import com.example.reporting.data.ReportDataProvider;
 import com.example.reporting.data.ReportRow;
+import com.example.reporting.observability.ReportingMetrics;
 import com.example.reporting.profile.ProfileRegistry;
 import com.example.reporting.profile.ProfileValidator;
 import com.example.reporting.profile.ReportingProperties;
@@ -33,6 +34,7 @@ import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
 import com.example.reporting.tracking.TriggerType;
 import com.example.reporting.transmission.DocumentGeneratedEvent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -71,6 +73,7 @@ class GenerationWorkerTest {
     private final PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
     private final List<ReportRow> rows = new ArrayList<>();
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private GenerationWorker worker;
     private ReportDocument document;
 
@@ -94,7 +97,7 @@ class GenerationWorkerTest {
         FipsReportComposer composer = new FipsReportComposer(registry, referenceData, provider,
                 new DocumentSpecFactory(properties, loader), properties);
         worker = new GenerationWorker(documents, runs, composer, content, claims, clock, transactions, events,
-                properties);
+                properties, new ReportingMetrics(meters));
 
         ReportRun run = ReportRun.start("VA", TriggerType.API, "jdoe", null, NOW);
         ReflectionTestUtils.setField(run, "runId", 3L);
@@ -132,6 +135,10 @@ class GenerationWorkerTest {
         assertThat(event.getValue().stateCode()).isEqualTo("VA");
         verify(transactions).commit(any());
         assertThat(tempFiles()).isEmpty();
+        assertThat(meters.counter("reporting.documents.generated", "state", "VA", "outcome", "success").count())
+                .isEqualTo(1);
+        assertThat(meters.get("reporting.pdf.pages").summary().totalAmount()).isEqualTo(1);
+        assertThat(meters.get("reporting.generation.duration").timer().count()).isEqualTo(1);
     }
 
     @Test
@@ -157,6 +164,8 @@ class GenerationWorkerTest {
         verify(claims).markGenerationFailed(eq(CLAIM), eq(DocumentStatus.DATA_ERROR), isNull(),
                 eq("ReportDataException: Record with category CATX that is not an active category of state VA"),
                 eq(NOW));
+        assertThat(meters.counter("reporting.documents.generated", "state", "VA", "outcome", "data_error").count())
+                .isEqualTo(1);
     }
 
     @Test

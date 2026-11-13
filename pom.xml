@@ -34,6 +34,7 @@
         <shedlock.version>4.48.0</shedlock.version>
         <db2-jcc.version>11.5.9.0</db2-jcc.version>
         <verapdf.version>1.26.5</verapdf.version>
+        <testcontainers.version>1.19.8</testcontainers.version>
 
         <!-- Quality plugins: newest lines that still run on Java 11 -->
         <maven-checkstyle-plugin.version>3.4.0</maven-checkstyle-plugin.version>
@@ -49,6 +50,14 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Testcontainers for the db2-it profile; Boot 2.7 does not manage it -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>com.example.reporting</groupId>
                 <artifactId>report-pdf-core</artifactId>

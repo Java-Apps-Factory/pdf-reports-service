@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import com.example.reporting.data.FipsWorkload;
 import com.example.reporting.data.ReferenceDataRepository;
 import com.example.reporting.data.ReportDataProvider;
+import com.example.reporting.observability.ReportingMetrics;
 import com.example.reporting.profile.ProfileRegistry;
 import com.example.reporting.profile.ProfileValidator;
 import com.example.reporting.profile.TestProfiles;
@@ -24,6 +25,7 @@ import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
 import com.example.reporting.tracking.RunStatus;
 import com.example.reporting.tracking.TriggerType;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -48,13 +50,15 @@ class ReportRunServiceTest {
     private final ReportDocumentRepository documents = mock(ReportDocumentRepository.class);
     private final RunStateLock lock = mock(RunStateLock.class);
     private final DbClock clock = mock(DbClock.class);
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private ReportRunService service;
 
     @BeforeEach
     void setUp() {
         ProfileRegistry registry = new ProfileRegistry(TestProfiles.virginiaProperties(Paths.get("tmp")),
                 mock(ProfileValidator.class), new DefaultResourceLoader());
-        service = new ReportRunService(referenceData, registry, dataProvider, runs, documents, lock, clock);
+        service = new ReportRunService(referenceData, registry, dataProvider, runs, documents, lock, clock,
+                new ReportingMetrics(meters));
         when(referenceData.states()).thenReturn(Map.of("VA", true, "MD", false));
         when(referenceData.activeFipsCodes("VA")).thenReturn(Set.of("51059", "51013", "51001"));
         when(clock.now()).thenReturn(NOW);
@@ -84,6 +88,7 @@ class ReportRunServiceTest {
                 DocumentStatus.PENDING, DocumentStatus.DATA_ERROR);
         assertThat(saved.get(2).getLastError()).isEqualTo(ReportRunService.UNKNOWN_FIPS_MESSAGE);
         verify(lock, never()).release(anyString(), anyLong());
+        assertThat(meters.counter("reporting.runs.started", "state", "VA", "trigger", "API").count()).isEqualTo(1);
     }
 
     @Test

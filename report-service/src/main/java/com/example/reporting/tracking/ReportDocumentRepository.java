@@ -64,4 +64,12 @@ public interface ReportDocumentRepository extends JpaRepository<ReportDocument, 
     @Query("select d.status as status, count(d) as count from ReportDocument d where d.runId = :runId "
             + "group by d.status")
     List<StatusCount> countByStatus(Long runId);
+
+    /**
+     * Counts all documents per status, for the cluster-wide gauges.
+     *
+     * @return one entry per status present
+     */
+    @Query("select d.status as status, count(d) as count from ReportDocument d group by d.status")
+    List<StatusCount> countAllByStatus();
 }

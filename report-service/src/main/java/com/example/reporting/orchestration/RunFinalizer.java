@@ -1,5 +1,6 @@
 package com.example.reporting.orchestration;
 
+import com.example.reporting.observability.ReportingMetrics;
 import com.example.reporting.profile.ReportingProperties;
 import com.example.reporting.tracking.DbClock;
 import com.example.reporting.tracking.DocumentStatus;
@@ -8,7 +9,9 @@ import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
 import com.example.reporting.tracking.RunStatus;
 import java.time.Duration;
+import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 import net.javacrumbs.shedlock.core.ClockProvider;
 import net.javacrumbs.shedlock.core.LockConfiguration;
@@ -48,6 +51,7 @@ public class RunFinalizer implements SchedulingConfigurer {
     private final TransactionTemplate transaction;
     private final LockingTaskExecutor locks;
     private final Duration interval;
+    private final ReportingMetrics metrics;
 
     /**
      * Creates the finalizer.
@@ -59,10 +63,11 @@ public class RunFinalizer implements SchedulingConfigurer {
      * @param transactionManager transaction manager
      * @param locks ShedLock executor
      * @param properties reporting configuration
+     * @param metrics meters; the per-status gauges are refreshed on each pass
      */
     public RunFinalizer(ReportRunRepository runs, ReportDocumentRepository documents, RunStateLock stateLock,
             DbClock dbClock, PlatformTransactionManager transactionManager, LockingTaskExecutor locks,
-            ReportingProperties properties) {
+            ReportingProperties properties, ReportingMetrics metrics) {
         this.runs = runs;
         this.documents = documents;
         this.stateLock = stateLock;
@@ -70,6 +75,7 @@ public class RunFinalizer implements SchedulingConfigurer {
         this.transaction = new TransactionTemplate(transactionManager);
         this.locks = locks;
         this.interval = properties.getJobs().getFinalizerInterval();
+        this.metrics = metrics;
     }
 
     @Override
@@ -96,6 +102,9 @@ public class RunFinalizer implements SchedulingConfigurer {
                         failed ? RunStatus.COMPLETED_WITH_ERRORS : RunStatus.COMPLETED);
             }
         }
+        Map<DocumentStatus, Long> counts = new EnumMap<>(DocumentStatus.class);
+        documents.countAllByStatus().forEach(c -> counts.put(c.getStatus(), c.getCount()));
+        metrics.documentsByStatus(counts);
         return changed;
     }
 
@@ -113,7 +122,9 @@ public class RunFinalizer implements SchedulingConfigurer {
             return 1;
         });
         if (result != null && result == 1) {
-            LOG.info("Run {} moved {} -> {}", runId, from, to);
+            Map<DocumentStatus, Long> byStatus = new EnumMap<>(DocumentStatus.class);
+            documents.countByStatus(runId).forEach(c -> byStatus.put(c.getStatus(), c.getCount()));
+            LOG.info("Run {} moved {} -> {}; documents {}", runId, from, to, byStatus);
             return 1;
         }
         return 0;

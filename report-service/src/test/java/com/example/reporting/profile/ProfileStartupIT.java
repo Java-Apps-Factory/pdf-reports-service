@@ -54,7 +54,8 @@ class ProfileStartupIT {
             ReportingProperties properties = context.getBean(ReportingProperties.class);
             assertThat(properties.getGeneration().getFetchSize()).isEqualTo(500);
             assertThat(properties.getGeneration().getLeaseDuration()).hasMinutes(15);
-            assertThat(properties.isTaggingEnabled()).isFalse();
+            assertThat(properties.isTaggingEnabled()).as("PDF/UA tagging is on since Phase 5").isTrue();
+            assertThat(properties.getColorProfile()).isEqualTo("classpath:color/sRGB.icc");
         }
     }
 

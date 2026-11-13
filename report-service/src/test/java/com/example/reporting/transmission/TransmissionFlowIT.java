@@ -7,6 +7,7 @@ import com.example.reporting.TrackingRows;
 import com.example.reporting.maintenance.ContentPurgeJob;
 import com.example.reporting.tracking.DbClock;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -64,16 +65,18 @@ class TransmissionFlowIT {
     private final EmbeddedActiveMQ broker;
     private final ContentPurgeJob purgeJob;
     private final DbClock clock;
+    private final MeterRegistry meters;
     private final TrackingRows rows;
 
     TransmissionFlowIT(TestRestTemplate http, JdbcTemplate jdbc, ConnectionFactory connectionFactory,
-            EmbeddedActiveMQ broker, ContentPurgeJob purgeJob, DbClock clock) {
+            EmbeddedActiveMQ broker, ContentPurgeJob purgeJob, DbClock clock, MeterRegistry meters) {
         this.http = http;
         this.jdbc = jdbc;
         this.connectionFactory = connectionFactory;
         this.broker = broker;
         this.purgeJob = purgeJob;
         this.clock = clock;
+        this.meters = meters;
         this.rows = new TrackingRows(jdbc);
     }
 
@@ -117,6 +120,21 @@ class TransmissionFlowIT {
                 .isEqualTo(((String) row.get("SHA256")).trim());
         assertThat(Collections.list(message.getPropertyNames())).filteredOn(n -> !n.toString().startsWith("JMS"))
                 .hasSize(11);
+
+        // Observability (SPEC section 18): meters, the finalizer's status gauges and the readiness probe.
+        assertThat(meters.get("reporting.runs.started").tags("state", "VA", "trigger", "API").counter().count())
+                .isPositive();
+        assertThat(meters.get("reporting.documents.generated").tags("state", "VA", "outcome", "success").counter()
+                .count()).isPositive();
+        assertThat(meters.get("reporting.send.duration").tags("state", "VA", "outcome", "sent").timer().count())
+                .isPositive();
+        await().atMost(TrackingRows.TIMEOUT).untilAsserted(() -> assertThat(
+                meters.get("reporting.documents.by.status").tag("status", "SENT").gauge().value()).isPositive());
+        ResponseEntity<JsonNode> readiness = http.getForEntity("/actuator/health/readiness", JsonNode.class);
+        assertThat(readiness.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(readiness.getBody().get("status").asText()).isEqualTo("UP");
+        assertThat(http.getForEntity("/actuator/health/liveness", JsonNode.class).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
     }
 
     @Test
