@@ -3,10 +3,10 @@ package com.example.reporting.spike;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.example.reporting.profile.ReportingProperties;
+import com.example.reporting.profile.TestProfiles;
 import com.ibm.websphere.sib.api.jms.JmsFactoryFactory;
 import com.ibm.websphere.sib.api.jms.JmsFactoryFactory.RecordingFactory;
-import java.time.ZoneId;
+import java.nio.file.Paths;
 import javax.jms.ConnectionFactory;
 import javax.jms.JMSException;
 import javax.jms.Queue;
@@ -39,9 +39,7 @@ class SibSpikeConfigTest {
 
     @Test
     void createsTheQueueFromTheTransmissionQueueName() throws JMSException {
-        Queue queue = config.sibSpikeQueue(new ReportingProperties("node-1", ZoneId.of("America/New_York"),
-                new ReportingProperties.Db("SELECT CURRENT_TIMESTAMP"),
-                new ReportingProperties.Transmission("REPORT.OUT.QUEUE"), new ReportingProperties.Dev(0)));
+        Queue queue = config.sibSpikeQueue(TestProfiles.virginiaProperties(Paths.get("tmp")));
         assertThat(queue.getQueueName()).isEqualTo("REPORT.OUT.QUEUE");
     }
 

@@ -1,0 +1,12 @@
+# ProfileStartupIT: Virginia columns whose widths sum to 101.
+reporting:
+  states:
+    VA:
+      columns:
+        - { key: caseNumber,  label: "Case Number", type: TEXT,     width: 15, wrap: false }
+        - { key: lastName,    label: "Last Name",   type: TEXT,     width: 14, wrap: true }
+        - { key: firstName,   label: "First Name",  type: TEXT,     width: 14, wrap: true }
+        - { key: eventDate,   label: "Event Date",  type: DATE,     width: 10, wrap: false }
+        - { key: amount,      label: "Amount",      type: CURRENCY, width: 11, wrap: false }
+        - { key: status,      label: "Status",      type: TEXT,     width: 10, wrap: false }
+        - { key: description, label: "Description", type: TEXT,     width: 27, wrap: true }

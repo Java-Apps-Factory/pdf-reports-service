@@ -1,5 +1,7 @@
 target/
-data/
+# Local H2 dev database (repo root or module dir, depending on where the app runs)
+/data/
+/report-service/data/
 *.log
 .idea/
 *.iml

@@ -241,6 +241,11 @@ class StreamingReportDocumentWriterTest {
         assertThat(SummaryData.builder().heading("H").labelHeader("L").countHeader("C").totalLabel("T")
                 .addRow("a", 2).addRow("b", 3).build().total()).isEqualTo(5);
         assertThat(section("X").headingFor(12_345)).isEqualTo("X (12,345 records)");
+        assertThat(section("X").headingFor(1)).isEqualTo("X (1 records)");
+        SectionSpec singular = SectionSpec.builder().heading("X ({n} records)").singularHeading("X ({n} record)")
+                .continuationLabel("X (continued)").table(NARROW).build();
+        assertThat(singular.headingFor(1)).isEqualTo("X (1 record)");
+        assertThat(singular.headingFor(0)).isEqualTo("X (0 records)");
     }
 
     private List<Integer> sectionStarts(int rowsInFirstSection) throws IOException {

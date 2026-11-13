@@ -10,7 +10,8 @@ import java.util.Objects;
  *
  * <p>The heading may contain the token {@value #COUNT_TOKEN}; it is replaced by the section's row count
  * (US grouping, for example "2,000") when the section ends, because the count is only known after the rows
- * have streamed. The resolved heading is also the section's bookmark title.
+ * have streamed. The resolved heading is also the section's bookmark title. An optional singular heading
+ * is used instead when the section has exactly one row, for example "(1 record)".
  */
 public final class SectionSpec {
 
@@ -18,11 +19,13 @@ public final class SectionSpec {
     public static final String COUNT_TOKEN = "{n}";
 
     private final String heading;
+    private final String singularHeading;
     private final String continuationLabel;
     private final TableSpec table;
 
     private SectionSpec(Builder builder) {
         this.heading = Objects.requireNonNull(builder.heading, "heading");
+        this.singularHeading = builder.singularHeading == null ? builder.heading : builder.singularHeading;
         this.continuationLabel = Objects.requireNonNull(builder.continuationLabel, "continuationLabel");
         this.table = Objects.requireNonNull(builder.table, "table");
     }
@@ -49,10 +52,11 @@ public final class SectionSpec {
      * Returns the heading with the row count filled in.
      *
      * @param rowCount rows in the section
-     * @return resolved heading
+     * @return resolved heading; the singular heading when {@code rowCount} is 1
      */
     public String headingFor(long rowCount) {
-        return heading.replace(COUNT_TOKEN, NumberFormat.getIntegerInstance(Locale.US).format(rowCount));
+        String template = rowCount == 1 ? singularHeading : heading;
+        return template.replace(COUNT_TOKEN, NumberFormat.getIntegerInstance(Locale.US).format(rowCount));
     }
 
     /**
@@ -76,6 +80,7 @@ public final class SectionSpec {
     /** Builder for {@link SectionSpec}. Heading, continuation label and table are required. */
     public static final class Builder {
         private String heading;
+        private String singularHeading;
         private String continuationLabel;
         private TableSpec table;
 
@@ -90,6 +95,17 @@ public final class SectionSpec {
          */
         public Builder heading(String value) {
             this.heading = value;
+            return this;
+        }
+
+        /**
+         * Sets the heading used when the section has exactly one row; defaults to {@link #heading(String)}.
+         *
+         * @param value heading, optionally containing {@value SectionSpec#COUNT_TOKEN}
+         * @return this builder
+         */
+        public Builder singularHeading(String value) {
+            this.singularHeading = value;
             return this;
         }
 
