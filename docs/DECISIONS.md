@@ -167,3 +167,27 @@ path (`SibConnectionFactoryConfig` → `JmsReportTransmitter`).
 | Superseded documents are never sent | **Done** — `anOlderDocumentIsSupersededAndNeverSent` (status SUPERSEDED, no JMS message ID, no message on the queue, retransmit refused with 409) and `SendWorkerTest`. |
 | Purge and 410 behave as specified | **Done** — `purgeDeletesOldContentKeepsMetadataAndDownloadsReturn410` (old SENT and SUPERSEDED purged, recent SENT and SEND_FAILED_FINAL kept, download and retransmit return 410). Retransmit of one document and of a run: `retransmitting…` tests. |
 | `mvn verify` passes | See the Phase 4 commit; run on JDK 11 with Checkstyle, SpotBugs and JaCoCo. |
+
+## Phase 5 — Accessibility
+
+| Date | Decision | Reason |
+|---|---|---|
+| 2026-11-13 | `TaggingContext` gained `beginHeaderCell(Scope)`, reservable **slots** (`reserveSlot`, `resumeSlot`, `endSlot`) and `finish(document)`. Pass 1 opens `Document`, reserves a front-matter slot (title block and summary) and, per section, a heading slot before its table; pass 2 fills the slots, so content drawn last still comes first in reading order. Slots are placeholder `NonStruct` elements removed at `finish`. | Section 10 foresaw that pass 2 attaches to elements created in pass 1; slots do this without the decorator knowing about structure elements. |
+| 2026-11-13 | Structure (section 12): Document → H1 (title), Figure (logo, alt text), P (other title-block lines), Sect (H2 "Summary", Table → THead/TBody, total row TH Scope=Row + TD), Sect per category (H2, Table, P for the empty message). Every TH carries a Table attribute with Scope Column (header rows) or Row (total label). Each cell is one TD/TH with its own MCID; elements record their page, and a marked-content reference is used if an element's content were ever on another page. | Literal reading of section 12. |
+| 2026-11-13 | An **empty category's table has no THead**: it is tagged Table → TR → TH. | veraPDF PDF/UA-1 rule 7.2-14: a Table with a THead must also have a TBody; an empty table has no body rows. |
+| 2026-11-13 | Title block reading order is H1 (title) → Figure (logo) → P lines; the painter now draws the title before the logo. | Section 12 tree order. |
+| 2026-11-13 | Artifacts: fills, borders and rules `/Layout`; running header, footer, page numbers, continuation labels and repeated header rows `/Pagination`. | Section 12 list. |
+| 2026-11-13 | With tagging on, the writer sets PDF version 1.7, writes XMP (`dc:title`, `dc:description`, `dc:creator`, `xmp:CreatorTool`, `pdfaid:part=2`, `pdfaid:conformance=A`, `pdfuaid:part=1` and the PDF/A extension schema for `pdfuaid`), adds an sRGB output intent, `/MarkInfo /Marked true`, the parent tree and `/Tabs /S` on every page. Info entries are written only when non-blank, so they always match the XMP. | PDF/A-2a and PDF/UA-1 document-level requirements; veraPDF passes with these. |
+| 2026-11-13 | A logo with an alpha channel is flattened onto white before embedding (no soft mask). | Section 12: no transparency groups on the logo. |
+| 2026-11-13 | `DocumentSpec.outputIntentProfile` is required when tagging is on. `reporting.color-profile` (default `classpath:color/sRGB.icc`) is loaded by `DocumentSpecFactory`; **until the approved `sRGB.icc` is added, the JDK's built-in sRGB profile stands in, with a WARN log**. Core tests use the bundled file if present, otherwise the same JDK stand-in. | The user will provide the file (no download). The stand-in keeps the build and PDF/A output valid meanwhile. **Open: add `report-service/src/main/resources/color/sRGB.icc` and record its source, licence and SHA-256 here.** |
+| 2026-11-13 | `reporting.tagging-enabled: true` in `application.yml`. | Section 21, Phase 5. |
+| 2026-11-13 | veraPDF `org.verapdf:validation-model` 1.26.5 (built for Java 8) is a test dependency of both modules. | Section 5: latest line that runs on Java 11. |
+| 2026-11-13 | **Risk for Phase 6:** the structure tree holds one element per cell in memory until save (100,000 rows × 7 columns ≈ 800,000 elements). PDFBox cannot stream the tree, so heap use grows with rows when tagging is on. The `perf` test must measure peak heap with tagging on against NFR-02/03. | Inherent in section 12's per-cell TD structure with PDFBox 3. |
+
+### Phase 5 acceptance status
+
+| Criterion | Status |
+|---|---|
+| veraPDF reports zero PDF/UA-1 and PDF/A-2a failures on the three sample reports | **Done** — `AccessibilityComplianceTest` (empty category, multi-page category, single row × both flavours: 6 checks, 0 failures) and `ReportComplianceIT` on real seeded reports (51013 with an empty category, 51059 multi-page). Verified with the JDK sRGB stand-in; re-run once `sRGB.icc` is added. PDFs for manual checks: `report-pdf-core/target/pdfua-*.pdf`. |
+| Reading order in the structure tree matches section 12 | **Done** — `StructureTreeTest` (element order, TH scopes, Figure alt text, no placeholders left, parent tree per page, `/Tabs /S`, MarkInfo, metadata, output intent) and `PdfUaTaggingContextTest`. |
+| Manual check with NVDA + Acrobat and PAC (section 12, before go-live) | **Open** — needs the accessibility reviewer. |

@@ -59,6 +59,9 @@ public final class ReportingProperties {
 
     private final boolean taggingEnabled;
 
+    @NotBlank
+    private final String colorProfile;
+
     @Valid
     @NotNull
     private final Map<String, StateProfile> states;
@@ -82,7 +85,8 @@ public final class ReportingProperties {
      * @param retention PDF retention
      * @param sib SIB connection settings
      * @param fonts font resources
-     * @param taggingEnabled whether PDFs are tagged for PDF/UA (Phase 5)
+     * @param colorProfile sRGB ICC profile resource used as the PDF/A output intent
+     * @param taggingEnabled whether PDFs are tagged for PDF/UA-1 and PDF/A-2a
      * @param states presentation profile per state code
      * @param jobs background job settings
      * @param dev development-only settings
@@ -96,6 +100,7 @@ public final class ReportingProperties {
             @DefaultValue Retention retention,
             @DefaultValue Sib sib,
             @DefaultValue Fonts fonts,
+            @DefaultValue("classpath:color/sRGB.icc") String colorProfile,
             @DefaultValue("false") boolean taggingEnabled,
             Map<String, StateProfile> states,
             @DefaultValue Jobs jobs,
@@ -109,6 +114,7 @@ public final class ReportingProperties {
         this.retention = retention;
         this.sib = sib;
         this.fonts = fonts;
+        this.colorProfile = colorProfile;
         this.taggingEnabled = taggingEnabled;
         this.states = states == null ? Map.of() : Collections.unmodifiableMap(new TreeMap<>(states));
         this.dev = dev;
@@ -144,6 +150,10 @@ public final class ReportingProperties {
 
     public Fonts getFonts() {
         return fonts;
+    }
+
+    public String getColorProfile() {
+        return colorProfile;
     }
 
     public boolean isTaggingEnabled() {

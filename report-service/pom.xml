@@ -110,6 +110,12 @@
             <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- PDF/UA-1 and PDF/A-2a checks of real reports (SPEC section 12) -->
+        <dependency>
+            <groupId>org.verapdf</groupId>
+            <artifactId>validation-model</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

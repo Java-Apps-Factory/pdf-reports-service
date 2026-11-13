@@ -11,6 +11,7 @@ import com.example.reporting.profile.ColumnDefinition;
 import com.example.reporting.profile.ColumnType;
 import com.example.reporting.profile.StateProfile;
 import com.example.reporting.profile.TestProfiles;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.List;
@@ -54,6 +55,16 @@ class DocumentSpecFactoryTest {
         assertThat(spec.language()).isEqualTo("en-US");
         assertThat(spec.taggingEnabled()).isFalse();
         assertThat(spec.logContext()).doesNotContain("Fairfax").contains("51059");
+    }
+
+    @Test
+    void embedsTheConfiguredColourProfileOrTheJdkStandIn() {
+        ReportRequest request = ReportRequest.builder().stateCode("VA").fipsCode("51059").runId(1).docId(2)
+                .dataAsOf(Instant.parse("2026-11-10T07:00:00Z")).build();
+        DocumentSpec spec = factory.documentSpec(request, TestProfiles.virginia(), new byte[] {1}, "Fairfax", 4);
+        byte[] profile = spec.outputIntentProfile().orElseThrow();
+        // An ICC profile starts with its size and has the signature "acsp" at byte 36.
+        assertThat(new String(profile, 36, 4, StandardCharsets.US_ASCII)).isEqualTo("acsp");
     }
 
     @Test

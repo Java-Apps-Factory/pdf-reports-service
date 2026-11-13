@@ -92,7 +92,7 @@ public final class TestProfiles {
                 new ReportingProperties.Sib("", "", "InboundBasicMessaging", "", ""),
                 new ReportingProperties.Fonts("classpath:fonts/NotoSans-Regular.ttf",
                         "classpath:fonts/NotoSans-Bold.ttf", "classpath:fonts/NotoSans-Italic.ttf"),
-                false, states,
+                "classpath:color/sRGB.icc", false, states,
                 new ReportingProperties.Jobs(true, Duration.ofSeconds(30), Duration.ofSeconds(60)),
                 new ReportingProperties.Dev(0));
     }

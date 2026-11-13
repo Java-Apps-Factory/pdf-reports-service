@@ -10,6 +10,8 @@ import com.example.reporting.pdf.text.FontSet;
 import com.example.reporting.profile.ColumnDefinition;
 import com.example.reporting.profile.ReportingProperties;
 import com.example.reporting.profile.StateProfile;
+import java.awt.color.ColorSpace;
+import java.awt.color.ICC_Profile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -18,6 +20,9 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
 
@@ -28,11 +33,13 @@ import org.springframework.stereotype.Component;
 @Component
 public final class DocumentSpecFactory {
 
+    private static final Logger LOG = LoggerFactory.getLogger(DocumentSpecFactory.class);
     private static final String DASH = " – ";
     private static final DateTimeFormatter AS_OF =
             DateTimeFormatter.ofPattern("MM/dd/yyyy hh:mm a v", Locale.US);
 
     private final FontSet fonts;
+    private final byte[] colorProfile;
     private final ZoneId zone;
     private final boolean tagging;
 
@@ -49,6 +56,7 @@ public final class DocumentSpecFactory {
                 .bold(read(resourceLoader, locations.getBold()))
                 .italic(read(resourceLoader, locations.getItalic()))
                 .build();
+        this.colorProfile = colorProfile(resourceLoader, properties.getColorProfile());
         this.zone = properties.getBusinessZone();
         this.tagging = properties.isTaggingEnabled();
     }
@@ -82,6 +90,7 @@ public final class DocumentSpecFactory {
                 .metadata(headerLeft, "FIPS " + fips + DASH + locality, profile.getSubtitle())
                 .summaryRowCount(categoryCount)
                 .taggingEnabled(tagging)
+                .outputIntentProfile(colorProfile)
                 .logContext("state=" + request.stateCode() + " fips=" + fips + " doc=" + request.docId())
                 .build();
     }
@@ -143,6 +152,20 @@ public final class DocumentSpecFactory {
                     .build());
         }
         return table.build();
+    }
+
+    /**
+     * Loads the bundled sRGB ICC profile. Until {@code color/sRGB.icc} is provided, the JDK's own sRGB profile
+     * stands in, with a warning: the PDFs stay valid PDF/A, but the embedded profile then depends on the JDK.
+     */
+    private static byte[] colorProfile(ResourceLoader loader, String location) {
+        Resource resource = loader.getResource(location);
+        if (resource.exists()) {
+            return read(loader, location);
+        }
+        LOG.warn("Colour profile {} not found; using the JDK's built-in sRGB profile as PDF/A output intent until "
+                + "the approved sRGB.icc is added", location);
+        return ICC_Profile.getInstance(ColorSpace.CS_sRGB).getData();
     }
 
     private static byte[] read(ResourceLoader loader, String location) {

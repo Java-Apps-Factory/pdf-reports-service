@@ -28,7 +28,7 @@ reporting:
     bold: classpath:fonts/NotoSans-Bold.ttf
     italic: classpath:fonts/NotoSans-Italic.ttf
   color-profile: classpath:color/sRGB.icc
-  tagging-enabled: false                     # true from Phase 5
+  tagging-enabled: true                      # PDF/UA-1 and PDF/A-2a (Phase 5)
   states:
     VA:
       enabled: true
