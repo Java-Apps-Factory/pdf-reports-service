@@ -1,11 +1,17 @@
 package com.example.reporting.tracking;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -19,6 +25,13 @@ public class ReportContentStore {
     private static final String DELETE = "DELETE FROM REPORT_CONTENT WHERE DOC_ID = ?";
     private static final String INSERT = "INSERT INTO REPORT_CONTENT (DOC_ID, PDF) VALUES (?, ?)";
     private static final String SELECT = "SELECT PDF FROM REPORT_CONTENT WHERE DOC_ID = ?";
+    private static final String PURGEABLE = "SELECT d.DOC_ID FROM REPORT_DOCUMENT d "
+            + "WHERE d.CONTENT_PURGED_AT IS NULL AND ((d.STATUS = ? AND d.SENT_AT < ?) "
+            + "OR (d.STATUS = ? AND d.UPDATED_AT < ?)) "
+            + "AND EXISTS (SELECT 1 FROM REPORT_CONTENT c WHERE c.DOC_ID = d.DOC_ID) "
+            + "ORDER BY d.DOC_ID FETCH FIRST ? ROWS ONLY";
+    private static final String MARK_PURGED =
+            "UPDATE REPORT_DOCUMENT SET CONTENT_PURGED_AT = ?, UPDATED_AT = ?, VERSION = VERSION + 1 WHERE DOC_ID = ?";
 
     private final JdbcTemplate jdbc;
 
@@ -73,6 +86,48 @@ public class ReportContentStore {
             return true;
         }, docId);
         return Boolean.TRUE.equals(found);
+    }
+
+    /**
+     * Loads the stored PDF into memory for sending. Only a send holds a whole PDF in heap (NFR-02).
+     *
+     * @param docId document ID
+     * @return the bytes, or empty if no content is stored
+     */
+    public Optional<byte[]> load(long docId) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        return copyTo(docId, out) ? Optional.of(out.toByteArray()) : Optional.empty();
+    }
+
+    /**
+     * Finds documents whose content may be purged (FR-18): SENT before {@code cutoff}, or SUPERSEDED (never to be
+     * sent) and last changed before {@code cutoff}, with content still stored.
+     *
+     * @param cutoff database time minus the retention period
+     * @param limit maximum IDs to return
+     * @return document IDs
+     */
+    public List<Long> findPurgeable(Instant cutoff, int limit) {
+        return jdbc.queryForList(PURGEABLE, Long.class, DocumentStatus.SENT.name(), Timestamp.from(cutoff),
+                DocumentStatus.SUPERSEDED.name(), Timestamp.from(cutoff), limit);
+    }
+
+    /**
+     * Deletes the content of the documents and sets {@code CONTENT_PURGED_AT}; call inside one transaction.
+     *
+     * @param docIds documents to purge
+     * @param now database time
+     */
+    public void purge(List<Long> docIds, Instant now) {
+        Timestamp at = Timestamp.from(now);
+        List<Object[]> deletes = new ArrayList<>(docIds.size());
+        List<Object[]> marks = new ArrayList<>(docIds.size());
+        for (Long docId : docIds) {
+            deletes.add(new Object[] {docId});
+            marks.add(new Object[] {at, at, docId});
+        }
+        jdbc.batchUpdate(DELETE, deletes);
+        jdbc.batchUpdate(MARK_PURGED, marks);
     }
 
     /**

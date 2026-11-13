@@ -2,10 +2,12 @@ package com.example.reporting.api;
 
 import com.example.reporting.api.dto.DocumentResponse;
 import com.example.reporting.api.dto.PageResponse;
+import com.example.reporting.api.dto.RetransmitRunResponse;
 import com.example.reporting.api.dto.RunResponse;
 import com.example.reporting.api.dto.StartRunRequest;
 import com.example.reporting.orchestration.ReportQueryService;
 import com.example.reporting.orchestration.ReportRunService;
+import com.example.reporting.orchestration.RetransmitService;
 import com.example.reporting.orchestration.StartRunCommand;
 import com.example.reporting.tracking.DocumentStatus;
 import com.example.reporting.tracking.ReportRun;
@@ -40,6 +42,7 @@ public class ReportRunController {
     private static final int MAX_PAGE_SIZE = 200;
 
     private final ReportRunService runService;
+    private final RetransmitService retransmits;
     private final ReportQueryService queries;
     private final ApiMapper mapper;
 
@@ -47,11 +50,14 @@ public class ReportRunController {
      * Creates the controller.
      *
      * @param runService starts runs
+     * @param retransmits manual retransmission
      * @param queries read side
      * @param mapper response mapper
      */
-    public ReportRunController(ReportRunService runService, ReportQueryService queries, ApiMapper mapper) {
+    public ReportRunController(ReportRunService runService, RetransmitService retransmits,
+            ReportQueryService queries, ApiMapper mapper) {
         this.runService = runService;
+        this.retransmits = retransmits;
         this.queries = queries;
         this.mapper = mapper;
     }
@@ -105,6 +111,20 @@ public class ReportRunController {
         ReportRun run = queries.run(runId).orElseThrow(() -> new ApiExceptions.NotFound("Run " + runId
                 + " does not exist."));
         return mapper.run(run, queries.documentCounts(runId));
+    }
+
+    /**
+     * Re-queues every SEND_FAILED and SEND_FAILED_FINAL document of the run (202).
+     *
+     * @param runId run ID
+     * @return how many documents were re-queued
+     */
+    @PostMapping("/{runId}/retransmit-failed")
+    public ResponseEntity<RetransmitRunResponse> retransmitFailed(@PathVariable long runId) {
+        int requeued = retransmits.retransmitFailedOfRun(runId);
+        return ResponseEntity.accepted()
+                .location(URI.create("/api/v1/report-runs/" + runId))
+                .body(new RetransmitRunResponse(runId, requeued));
     }
 
     /**

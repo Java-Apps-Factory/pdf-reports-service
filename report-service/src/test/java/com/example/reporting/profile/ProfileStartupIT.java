@@ -72,8 +72,8 @@ class ProfileStartupIT {
         List<String> args = new ArrayList<>();
         args.add("--spring.datasource.url=jdbc:h2:mem:" + database
                 + ";MODE=DB2;DATABASE_TO_UPPER=TRUE;DB_CLOSE_DELAY=-1");
-        // Own broker id so it never clashes with the cached test contexts' embedded broker (id 0).
-        args.add("--spring.artemis.embedded.server-id=" + (Math.abs(database.hashCode()) % 1000 + 10));
+        // Own broker id above 1000, so it never clashes with the ids Boot gives the cached test contexts' brokers.
+        args.add("--spring.artemis.embedded.server-id=" + (Math.abs(database.hashCode()) % 1000 + 2000));
         args.add("--reporting.dev.seed-records=0");
         for (String property : properties) {
             // Command-line arguments override application.yml; builder default properties would not.

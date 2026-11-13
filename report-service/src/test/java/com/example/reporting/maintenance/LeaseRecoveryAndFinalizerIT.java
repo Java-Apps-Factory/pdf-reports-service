@@ -46,10 +46,11 @@ class LeaseRecoveryAndFinalizerIT {
         Instant now = clock.now();
         Instant expired = now.minus(Duration.ofMinutes(1));
         long runId = rows.insertRun("DISPATCHING", now);
-        long retry = rows.insertDocument(runId, "51059", "GENERATING", 1, "dead-node", expired, now);
-        long lastAttempt = rows.insertDocument(runId, "51013", "GENERATING", 3, "dead-node", expired, now);
-        long sending = rows.insertDocument(runId, "51107", "SENDING", 1, "dead-node", expired, now);
-        long alive = rows.insertDocument(runId, "51153", "GENERATING", 1, "live-node",
+        // Fake FIPS codes, so these rows can never supersede documents of other tests.
+        long retry = rows.insertDocument(runId, "90001", "GENERATING", 1, "dead-node", expired, now);
+        long lastAttempt = rows.insertDocument(runId, "90002", "GENERATING", 3, "dead-node", expired, now);
+        long sending = rows.insertDocument(runId, "90003", "SENDING", 1, "dead-node", expired, now);
+        long alive = rows.insertDocument(runId, "90004", "GENERATING", 1, "live-node",
                 now.plus(Duration.ofMinutes(10)), now);
 
         sweeper.sweep();
@@ -62,9 +63,9 @@ class LeaseRecoveryAndFinalizerIT {
         assertThat(((Timestamp) retried.get("NEXT_ATTEMPT_AT")).toInstant())
                 .isAfter(now.plus(Duration.ofSeconds(50)));
         assertThat(rows.document(lastAttempt).get("STATUS")).asString().isEqualTo("GENERATION_FAILED_FINAL");
-        Map<String, Object> resend = rows.document(sending);
-        assertThat(resend.get("STATUS")).asString().isEqualTo("SEND_FAILED");
-        assertThat(((Timestamp) resend.get("NEXT_ATTEMPT_AT")).toInstant()).isBeforeOrEqualTo(clock.now());
+        // SEND_FAILED is due at once, so the send poller may already have claimed it (it has no stored PDF).
+        assertThat(((String) rows.document(sending).get("STATUS")).trim())
+                .isIn("SEND_FAILED", "SENDING", "SEND_FAILED_FINAL");
         Map<String, Object> live = rows.document(alive);
         assertThat(live.get("STATUS")).asString().isEqualTo("GENERATING");
         assertThat(live.get("LEASE_OWNER")).isEqualTo("live-node");
@@ -79,14 +80,15 @@ class LeaseRecoveryAndFinalizerIT {
     void dispatchingRunsCompleteWhenEveryDocumentIsFinal() {
         Instant now = clock.now();
         long clean = rows.insertRun("DISPATCHING", now);
-        rows.insertDocument(clean, "51059", "SENT", 1, null, null, now);
-        rows.insertDocument(clean, "51013", "SUPERSEDED", 1, null, null, now);
+        rows.insertDocument(clean, "90011", "SENT", 1, null, null, now);
+        rows.insertDocument(clean, "90012", "SUPERSEDED", 1, null, null, now);
         long failed = rows.insertRun("DISPATCHING", now);
-        rows.insertDocument(failed, "51059", "SENT", 1, null, null, now);
-        rows.insertDocument(failed, "51013", "SEND_FAILED_FINAL", 1, null, null, now);
+        rows.insertDocument(failed, "90013", "SENT", 1, null, null, now);
+        rows.insertDocument(failed, "90014", "SEND_FAILED_FINAL", 1, null, null, now);
         long open = rows.insertRun("DISPATCHING", now);
-        rows.insertDocument(open, "51059", "SENT", 1, null, null, now);
-        rows.insertDocument(open, "51013", "GENERATED", 1, null, null, now);
+        rows.insertDocument(open, "90015", "SENT", 1, null, null, now);
+        // A live GENERATING lease: not final, and no poller can claim it.
+        rows.insertDocument(open, "90016", "GENERATING", 1, "live-node", now.plus(Duration.ofMinutes(10)), now);
 
         finalizer.finalizeRuns();
         rows.awaitRunStatus(clean, "COMPLETED");
@@ -96,6 +98,7 @@ class LeaseRecoveryAndFinalizerIT {
         assertThat(jdbc.queryForObject("SELECT COMPLETED_AT FROM REPORT_RUN WHERE RUN_ID = ?", Timestamp.class,
                 clean)).isNotNull();
         // Leave the open run finished for other tests.
-        jdbc.update("UPDATE REPORT_DOCUMENT SET STATUS = 'SENT' WHERE RUN_ID = ?", open);
+        jdbc.update("UPDATE REPORT_DOCUMENT SET STATUS = 'SENT', LEASE_OWNER = NULL, LEASE_EXPIRES_AT = NULL "
+                + "WHERE RUN_ID = ?", open);
     }
 }

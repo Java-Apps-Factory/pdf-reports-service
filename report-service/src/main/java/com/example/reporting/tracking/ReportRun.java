@@ -108,6 +108,14 @@ public class ReportRun {
         }
     }
 
+    /**
+     * Moves a completed run back to DISPATCHING after a manual retransmit, so the finalizer completes it again.
+     */
+    public void reopenForDispatch() {
+        this.status = RunStatus.DISPATCHING;
+        this.completedAt = null;
+    }
+
     public Long getRunId() {
         return runId;
     }

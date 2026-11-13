@@ -11,13 +11,13 @@ import org.apache.activemq.artemis.core.server.embedded.EmbeddedActiveMQ;
 /**
  * An in-VM Artemis broker that plays the SIB messaging engine in tests and local runs.
  *
- * <p>Uses in-VM acceptor id 7, so it never collides with Spring Boot's embedded broker (id 0) when both run in
- * one JVM. Started lazily by {@link JmsFactoryFactory}; non-persistent, no security.
+ * <p>Uses in-VM acceptor id 9701, far above the ids Spring Boot gives embedded brokers (0, 1, 2, ... per
+ * application context), so the two never collide in one JVM. Started lazily by {@link JmsFactoryFactory}; non-persistent, no security.
  */
 public final class MockSibBus {
 
     /** Client URL of the mock bus. */
-    public static final String URL = "vm://7";
+    public static final String URL = "vm://9701";
 
     private static EmbeddedActiveMQ broker;
 

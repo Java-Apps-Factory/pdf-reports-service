@@ -1,6 +1,7 @@
 package com.example.reporting.api;
 
 import com.example.reporting.orchestration.InvalidRunRequestException;
+import com.example.reporting.orchestration.RetransmitRefusedException;
 import com.example.reporting.orchestration.RunAlreadyActiveException;
 import com.example.reporting.orchestration.UnknownStateException;
 import java.util.stream.Collectors;
@@ -73,6 +74,27 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ApiExceptions.ContentPurged.class)
     public ResponseEntity<ApiProblem> purged(ApiExceptions.ContentPurged e, HttpServletRequest request) {
         return problem(HttpStatus.GONE, "content-purged", "Content purged", e.getMessage(), request);
+    }
+
+    /**
+     * Maps a refused retransmit to 404, 409 or 410.
+     *
+     * @param e the exception
+     * @param request the request
+     * @return problem response
+     */
+    @ExceptionHandler(RetransmitRefusedException.class)
+    public ResponseEntity<ApiProblem> retransmitRefused(RetransmitRefusedException e, HttpServletRequest request) {
+        switch (e.getReason()) {
+            case NOT_FOUND:
+                return problem(HttpStatus.NOT_FOUND, "not-found", "Not found", e.getMessage(), request);
+            case GONE:
+                return problem(HttpStatus.GONE, "content-purged", "Content purged", e.getMessage(), request);
+            case CONFLICT:
+            default:
+                return problem(HttpStatus.CONFLICT, "retransmit-not-allowed", "Retransmit not allowed",
+                        e.getMessage(), request);
+        }
     }
 
     /**

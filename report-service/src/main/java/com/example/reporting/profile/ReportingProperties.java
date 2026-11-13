@@ -47,6 +47,14 @@ public final class ReportingProperties {
 
     @Valid
     @NotNull
+    private final Retention retention;
+
+    @Valid
+    @NotNull
+    private final Sib sib;
+
+    @Valid
+    @NotNull
     private final Fonts fonts;
 
     private final boolean taggingEnabled;
@@ -71,6 +79,8 @@ public final class ReportingProperties {
      * @param db database-specific settings
      * @param generation PDF generation settings
      * @param transmission transmission settings
+     * @param retention PDF retention
+     * @param sib SIB connection settings
      * @param fonts font resources
      * @param taggingEnabled whether PDFs are tagged for PDF/UA (Phase 5)
      * @param states presentation profile per state code
@@ -83,6 +93,8 @@ public final class ReportingProperties {
             @DefaultValue Db db,
             @DefaultValue Generation generation,
             @DefaultValue Transmission transmission,
+            @DefaultValue Retention retention,
+            @DefaultValue Sib sib,
             @DefaultValue Fonts fonts,
             @DefaultValue("false") boolean taggingEnabled,
             Map<String, StateProfile> states,
@@ -94,6 +106,8 @@ public final class ReportingProperties {
         this.db = db;
         this.generation = generation;
         this.transmission = transmission;
+        this.retention = retention;
+        this.sib = sib;
         this.fonts = fonts;
         this.taggingEnabled = taggingEnabled;
         this.states = states == null ? Map.of() : Collections.unmodifiableMap(new TreeMap<>(states));
@@ -118,6 +132,14 @@ public final class ReportingProperties {
 
     public Transmission getTransmission() {
         return transmission;
+    }
+
+    public Retention getRetention() {
+        return retention;
+    }
+
+    public Sib getSib() {
+        return sib;
     }
 
     public Fonts getFonts() {
@@ -328,8 +350,28 @@ public final class ReportingProperties {
         }
     }
 
-    /** Transmission settings. */
+    /** Transmission settings (SPEC section 13). */
     public static final class Transmission {
+
+        @Min(1)
+        private final int workers;
+
+        @NotNull
+        private final Duration pollInterval;
+
+        @NotNull
+        private final Duration leaseDuration;
+
+        @Valid
+        @NotNull
+        private final InProcessRetry inProcess;
+
+        @Min(1)
+        private final int maxAttempts;
+
+        @Valid
+        @NotNull
+        private final BackoffSettings backoff;
 
         @NotBlank
         private final String queueName;
@@ -337,14 +379,200 @@ public final class ReportingProperties {
         /**
          * Creates the group.
          *
+         * @param workers send threads per node (and the matching semaphore)
+         * @param pollInterval delay between send polls
+         * @param leaseDuration send lease
+         * @param inProcess Spring Retry settings for transient errors within one attempt
+         * @param maxAttempts attempts before SEND_FAILED_FINAL
+         * @param backoff delay before a failed send is retried
          * @param queueName destination queue for report messages
          */
-        public Transmission(@DefaultValue("REPORT.OUT.QUEUE") String queueName) {
+        public Transmission(
+                @DefaultValue("2") int workers,
+                @DefaultValue("5s") Duration pollInterval,
+                @DefaultValue("5m") Duration leaseDuration,
+                @DefaultValue InProcessRetry inProcess,
+                @DefaultValue("8") int maxAttempts,
+                @DefaultValue BackoffSettings backoff,
+                @DefaultValue("REPORT.OUT.QUEUE") String queueName) {
+            this.workers = workers;
+            this.pollInterval = pollInterval;
+            this.leaseDuration = leaseDuration;
+            this.inProcess = inProcess;
+            this.maxAttempts = maxAttempts;
+            this.backoff = backoff;
             this.queueName = queueName;
+        }
+
+        public int getWorkers() {
+            return workers;
+        }
+
+        public Duration getPollInterval() {
+            return pollInterval;
+        }
+
+        public Duration getLeaseDuration() {
+            return leaseDuration;
+        }
+
+        public InProcessRetry getInProcess() {
+            return inProcess;
+        }
+
+        public int getMaxAttempts() {
+            return maxAttempts;
+        }
+
+        public BackoffSettings getBackoff() {
+            return backoff;
         }
 
         public String getQueueName() {
             return queueName;
+        }
+    }
+
+    /** In-process retry of one send attempt: attempts, initial delay, multiplier and maximum delay. */
+    public static final class InProcessRetry {
+
+        @Min(1)
+        private final int attempts;
+
+        @NotNull
+        private final Duration initial;
+
+        @DecimalMin("1.0")
+        private final double multiplier;
+
+        @NotNull
+        private final Duration max;
+
+        /**
+         * Creates the group.
+         *
+         * @param attempts tries per send attempt
+         * @param initial delay before the second try
+         * @param multiplier growth factor
+         * @param max upper bound of the delay
+         */
+        public InProcessRetry(
+                @DefaultValue("3") int attempts,
+                @DefaultValue("2s") Duration initial,
+                @DefaultValue("2.0") double multiplier,
+                @DefaultValue("10s") Duration max) {
+            this.attempts = attempts;
+            this.initial = initial;
+            this.multiplier = multiplier;
+            this.max = max;
+        }
+
+        public int getAttempts() {
+            return attempts;
+        }
+
+        public Duration getInitial() {
+            return initial;
+        }
+
+        public double getMultiplier() {
+            return multiplier;
+        }
+
+        public Duration getMax() {
+            return max;
+        }
+    }
+
+    /** Retention of stored PDFs (FR-18). */
+    public static final class Retention {
+
+        @Min(1)
+        private final int contentDays;
+
+        @NotBlank
+        private final String purgeCron;
+
+        /**
+         * Creates the group.
+         *
+         * @param contentDays days after sending before the PDF bytes are deleted
+         * @param purgeCron schedule of {@code ContentPurgeJob} (business time zone)
+         */
+        public Retention(
+                @DefaultValue("90") int contentDays,
+                @DefaultValue("0 30 3 * * *") String purgeCron) {
+            this.contentDays = contentDays;
+            this.purgeCron = purgeCron;
+        }
+
+        public int getContentDays() {
+            return contentDays;
+        }
+
+        public String getPurgeCron() {
+            return purgeCron;
+        }
+    }
+
+    /**
+     * WebSphere SIB connection settings ({@code reporting.sib.*}, profile {@code sib}). Not validated here because
+     * the group is bound in every profile; {@code SibConnectionFactoryConfig} checks them when SIB is used.
+     */
+    public static final class Sib {
+
+        private final String busName;
+        private final String providerEndpoints;
+        private final String targetTransportChain;
+        private final String username;
+        private final String password;
+
+        /**
+         * Creates the group.
+         *
+         * @param busName SIB bus name
+         * @param providerEndpoints bootstrap endpoints, {@code host:port:chain[,...]}
+         * @param targetTransportChain inbound transport chain of the messaging engine
+         * @param username optional user
+         * @param password optional password
+         */
+        public Sib(
+                @DefaultValue("") String busName,
+                @DefaultValue("") String providerEndpoints,
+                @DefaultValue("InboundBasicMessaging") String targetTransportChain,
+                @DefaultValue("") String username,
+                @DefaultValue("") String password) {
+            this.busName = busName;
+            this.providerEndpoints = providerEndpoints;
+            this.targetTransportChain = targetTransportChain;
+            this.username = username;
+            this.password = password;
+        }
+
+        public String getBusName() {
+            return busName;
+        }
+
+        public String getProviderEndpoints() {
+            return providerEndpoints;
+        }
+
+        public String getTargetTransportChain() {
+            return targetTransportChain;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        @Override
+        public String toString() {
+            // Never print the password.
+            return "Sib[bus=" + busName + ", endpoints=" + providerEndpoints + ", user=" + username + "]";
         }
     }
 

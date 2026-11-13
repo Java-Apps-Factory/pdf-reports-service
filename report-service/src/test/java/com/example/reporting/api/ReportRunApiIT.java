@@ -81,18 +81,20 @@ class ReportRunApiIT {
                     .isEqualTo("State VA already has run " + runId + " in progress.");
             assertThat(second.getBody().get("instance").asText()).isEqualTo(RUNS);
 
-            rows.awaitRunStatus(runId, "DISPATCHING");
+            rows.awaitRunStatus(runId, "DISPATCHING", "COMPLETED_WITH_ERRORS");
             JsonNode detail = http.getForObject(RUNS + "/" + runId, JsonNode.class);
             assertThat(detail.get("requestedBy").asText()).isEqualTo("jdoe");
-            assertThat(detail.get("completedAt").isNull()).isTrue();
-            assertThat(detail.get("documentsByStatus").get("GENERATED").asInt()).isEqualTo(fipsWithData - 1);
-            assertThat(detail.get("documentsByStatus").get("DATA_ERROR").asInt()).isEqualTo(1);
-            assertThat(detail.get("documentsByStatus")).hasSize(2);
+            JsonNode byStatus = detail.get("documentsByStatus");
+            assertThat(byStatus.path("GENERATED").asInt() + byStatus.path("SENDING").asInt()
+                    + byStatus.path("SENT").asInt()).isEqualTo(fipsWithData - 1);
+            assertThat(byStatus.get("DATA_ERROR").asInt()).isEqualTo(1);
 
             List<Map<String, Object>> documents = rows.documentsOf(runId);
             assertThat(documents).hasSize(fipsWithData)
                     .allSatisfy(d -> assertThat(((Number) d.get("GENERATION_ATTEMPTS")).intValue())
-                            .isEqualTo(((String) d.get("STATUS")).trim().equals("DATA_ERROR") ? 0 : 1));
+                            .isEqualTo(((String) d.get("STATUS")).trim().equals("DATA_ERROR") ? 0 : 1))
+                    .allSatisfy(d -> assertThat(((String) d.get("STATUS")).trim())
+                            .isIn("GENERATED", "SENDING", "SENT", "DATA_ERROR"));
             Map<String, Object> unknown = documents.stream()
                     .filter(d -> ((String) d.get("FIPS_CODE")).trim().equals("51999")).findFirst().orElseThrow();
             assertThat(unknown.get("STATUS")).asString().isEqualTo("DATA_ERROR");
@@ -117,15 +119,16 @@ class ReportRunApiIT {
         ResponseEntity<JsonNode> filtered = start("{\"stateCode\":\"VA\",\"fipsCodes\":[\"51013\",\"51005\"]}", "j");
         long runId = filtered.getBody().get("runId").asLong();
         assertThat(filtered.getBody().get("totalDocuments").asInt()).isEqualTo(1);
-        rows.awaitRunStatus(runId, "DISPATCHING");
+        rows.awaitRunStatus(runId, "DISPATCHING", "COMPLETED");
 
-        JsonNode page = http.getForObject(RUNS + "/" + runId + "/documents?status=GENERATED", JsonNode.class);
+        JsonNode page = http.getForObject(RUNS + "/" + runId + "/documents", JsonNode.class);
         assertThat(page.get("totalElements").asInt()).isEqualTo(1);
         JsonNode document = page.get("content").get(0);
         assertThat(document.get("fipsCode").asText()).isEqualTo("51013");
         assertThat(document.get("localityName").asText()).isEqualTo("Arlington County");
         assertThat(document.get("contentAvailable").asBoolean()).isTrue();
-        assertThat(http.getForObject(RUNS + "/" + runId + "/documents?status=SENT", JsonNode.class)
+        assertThat(document.get("status").asText()).isIn("GENERATED", "SENDING", "SENT");
+        assertThat(http.getForObject(RUNS + "/" + runId + "/documents?status=DATA_ERROR", JsonNode.class)
                 .get("totalElements").asInt()).isZero();
     }
 
@@ -155,15 +158,14 @@ class ReportRunApiIT {
     @Test
     void documentDetailAndDownloadAndPurgedContent() throws Exception {
         long runId = start("{\"stateCode\":\"VA\",\"fipsCodes\":[\"51013\"]}", "j").getBody().get("runId").asLong();
-        rows.awaitRunStatus(runId, "DISPATCHING");
+        rows.awaitRunStatus(runId, "DISPATCHING", "COMPLETED");
         long docId = rows.documentsOf(runId).stream().map(d -> ((Number) d.get("DOC_ID")).longValue())
                 .findFirst().orElseThrow();
 
         JsonNode detail = http.getForObject("/api/v1/report-documents/" + docId, JsonNode.class);
-        assertThat(detail.get("status").asText()).isEqualTo("GENERATED");
+        assertThat(detail.get("status").asText()).isIn("GENERATED", "SENDING", "SENT");
         assertThat(detail.get("pageCount").asInt()).isPositive();
         assertThat(detail.get("generationAttempts").asInt()).isEqualTo(1);
-        assertThat(detail.get("sendAttempts").asInt()).isZero();
         assertThat(detail.get("generatedAt").asText()).isNotEmpty();
         assertThat(detail.get("contentAvailable").asBoolean()).isTrue();
 

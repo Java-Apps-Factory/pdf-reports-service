@@ -46,7 +46,7 @@ class DailyReportSchedulerIT {
         assertThat(jdbc.queryForObject("SELECT REQUESTED_BY FROM REPORT_RUN WHERE RUN_ID = ?", String.class,
                 runs.get(0))).isEqualTo(DailyReportScheduler.REQUESTER);
         assertThat(jdbc.queryForList("SELECT NAME FROM SHEDLOCK", String.class)).contains("daily-report-VA");
-        rows.awaitRunStatus(runs.get(0), "DISPATCHING");
+        rows.awaitRunStatus(runs.get(0), "DISPATCHING", "COMPLETED");
     }
 
     @Test

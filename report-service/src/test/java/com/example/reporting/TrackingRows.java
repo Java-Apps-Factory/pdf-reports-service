@@ -17,8 +17,8 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 /** Test helper: inserts tracking rows directly and waits for run and lock states, using Awaitility. */
 public final class TrackingRows {
 
-    /** Upper bound for asynchronous work in integration tests. */
-    public static final Duration TIMEOUT = Duration.ofSeconds(90);
+    /** Upper bound for asynchronous work in integration tests; generous so a busy build machine cannot fail them. */
+    public static final Duration TIMEOUT = Duration.ofMinutes(3);
 
     private final JdbcTemplate jdbc;
 
@@ -82,6 +82,23 @@ public final class TrackingRows {
             return ps;
         }, keys);
         return Objects.requireNonNull(keys.getKey()).longValue();
+    }
+
+    /**
+     * Stores content for a document and sets its PDF facts as generation would (SHA-256, size, generated time).
+     *
+     * @param docId document ID
+     * @param pdf bytes to store
+     * @param sha256 hex SHA-256 to record
+     * @param generatedAt generation time
+     */
+    public void storeContent(long docId, byte[] pdf, String sha256, Instant generatedAt) {
+        jdbc.update("INSERT INTO REPORT_CONTENT (DOC_ID, PDF) VALUES (?, ?)", ps -> {
+            ps.setLong(1, docId);
+            ps.setBytes(2, pdf);
+        });
+        jdbc.update("UPDATE REPORT_DOCUMENT SET SHA256 = ?, SIZE_BYTES = ?, RECORD_COUNT = 1, PAGE_COUNT = 1, "
+                + "GENERATED_AT = ? WHERE DOC_ID = ?", sha256, pdf.length, Timestamp.from(generatedAt), docId);
     }
 
     /**

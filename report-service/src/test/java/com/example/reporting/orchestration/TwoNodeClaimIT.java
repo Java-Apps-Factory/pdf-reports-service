@@ -45,8 +45,8 @@ class TwoNodeClaimIT {
     @Test
     void racingClaimsNeverOverlap() throws Exception {
         String url = databaseUrl("race");
-        try (ConfigurableApplicationContext nodeA = start(url, "node-a", false, 31);
-                ConfigurableApplicationContext nodeB = start(url, "node-b", false, 32)) {
+        try (ConfigurableApplicationContext nodeA = start(url, "node-a", false, 1031);
+                ConfigurableApplicationContext nodeB = start(url, "node-b", false, 1032)) {
             JdbcTemplate jdbc = nodeA.getBean(JdbcTemplate.class);
             TrackingRows rows = new TrackingRows(jdbc);
             Instant now = nodeA.getBean(DbClock.class).now();
@@ -87,17 +87,17 @@ class TwoNodeClaimIT {
     @Test
     void aRunStartedOnOneNodeIsGeneratedByBothExactlyOnce() {
         String url = databaseUrl("flow");
-        try (ConfigurableApplicationContext nodeA = start(url, "node-a", true, 33);
-                ConfigurableApplicationContext nodeB = start(url, "node-b", true, 34)) {
+        try (ConfigurableApplicationContext nodeA = start(url, "node-a", true, 1033);
+                ConfigurableApplicationContext nodeB = start(url, "node-b", true, 1034)) {
             ReportRun run = nodeA.getBean(ReportRunService.class).startRun(StartRunCommand.builder().stateCode("VA")
                     .triggerType(TriggerType.API).requestedBy("two-node-test").build());
             TrackingRows rows = new TrackingRows(nodeB.getBean(JdbcTemplate.class));
 
-            rows.awaitRunStatus(run.getRunId(), "DISPATCHING");
+            rows.awaitRunStatus(run.getRunId(), "DISPATCHING", "COMPLETED");
 
             List<Map<String, Object>> documents = rows.documentsOf(run.getRunId());
             assertThat(documents).hasSize(run.getTotalDocuments()).allSatisfy(d -> {
-                assertThat(d.get("STATUS")).asString().isEqualTo("GENERATED");
+                assertThat(((String) d.get("STATUS")).trim()).isIn("GENERATED", "SENDING", "SENT");
                 assertThat(((Number) d.get("GENERATION_ATTEMPTS")).intValue()).isEqualTo(1);
             });
             long claimedA = nodeA.getBean(GenerationPoller.class).claimedTotal();

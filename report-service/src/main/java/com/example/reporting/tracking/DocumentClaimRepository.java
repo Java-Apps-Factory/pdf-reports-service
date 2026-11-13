@@ -32,6 +32,22 @@ public class DocumentClaimRepository {
     private static final String MARK_FAILED = "UPDATE REPORT_DOCUMENT SET STATUS = ?, NEXT_ATTEMPT_AT = ?, "
             + "LAST_ERROR = ?, LEASE_OWNER = NULL, LEASE_EXPIRES_AT = NULL, VERSION = VERSION + 1, "
             + "UPDATED_AT = ? WHERE DOC_ID = ? AND VERSION = ?";
+    private static final String CLAIM_SEND = "UPDATE REPORT_DOCUMENT SET STATUS = ?, LEASE_OWNER = ?, "
+            + "LEASE_EXPIRES_AT = ?, SEND_ATTEMPTS = SEND_ATTEMPTS + 1, VERSION = VERSION + 1, "
+            + "UPDATED_AT = ? WHERE DOC_ID = ? AND VERSION = ?";
+    private static final String MARK_SENT = "UPDATE REPORT_DOCUMENT SET STATUS = ?, JMS_MESSAGE_ID = ?, SENT_AT = ?, "
+            + "NEXT_ATTEMPT_AT = NULL, LAST_ERROR = NULL, LEASE_OWNER = NULL, LEASE_EXPIRES_AT = NULL, "
+            + "VERSION = VERSION + 1, UPDATED_AT = ? WHERE DOC_ID = ? AND VERSION = ?";
+    private static final String NEWER_EXISTS = "SELECT COUNT(*) FROM REPORT_DOCUMENT n, REPORT_DOCUMENT o "
+            + "WHERE o.DOC_ID = ? AND n.STATE_CODE = o.STATE_CODE AND n.FIPS_CODE = o.FIPS_CODE "
+            + "AND n.DOC_ID > o.DOC_ID AND n.STATUS IN (?, ?, ?)";
+    private static final String REQUEUE = "UPDATE REPORT_DOCUMENT SET STATUS = ?, SEND_ATTEMPTS = 0, "
+            + "NEXT_ATTEMPT_AT = ?, LAST_ERROR = ?, VERSION = VERSION + 1, UPDATED_AT = ? "
+            + "WHERE DOC_ID = ? AND STATUS IN (?, ?) AND CONTENT_PURGED_AT IS NULL";
+    private static final String REQUEUE_RUN = "UPDATE REPORT_DOCUMENT SET STATUS = ?, SEND_ATTEMPTS = 0, "
+            + "NEXT_ATTEMPT_AT = ?, LAST_ERROR = ?, VERSION = VERSION + 1, UPDATED_AT = ? "
+            + "WHERE RUN_ID = ? AND STATUS IN (?, ?) AND CONTENT_PURGED_AT IS NULL";
+    private static final String RETRANSMIT_NOTE = "Manual retransmit requested";
     private static final String EXPIRED = "SELECT DOC_ID, VERSION, STATUS, GENERATION_ATTEMPTS, LEASE_OWNER "
             + "FROM REPORT_DOCUMENT WHERE STATUS IN (?, ?) AND LEASE_EXPIRES_AT < ? ORDER BY DOC_ID";
 
@@ -105,6 +121,106 @@ public class DocumentClaimRepository {
         }
         return jdbc.update(MARK_FAILED, target.name(), ts(nextAttemptAt), truncate(error), ts(now), claim.docId(),
                 claim.version()) == 1;
+    }
+
+    /**
+     * Claims up to {@code limit} documents that are GENERATED or due SEND_FAILED, oldest first, moving each to
+     * SENDING with a lease and counting one send attempt.
+     *
+     * @param limit maximum documents to claim (free send permits)
+     * @param owner this node's ID
+     * @param now database time of this poll
+     * @param leaseUntil database time + send lease
+     * @return the documents this node won
+     */
+    public List<Claim> claimForSending(int limit, String owner, Instant now, Instant leaseUntil) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        List<Claim> candidates = jdbc.query(CANDIDATES, (rs, n) -> new Claim(rs.getLong(1), rs.getInt(2)),
+                DocumentStatus.GENERATED.name(), DocumentStatus.SEND_FAILED.name(), ts(now), limit);
+        List<Claim> won = new ArrayList<>(candidates.size());
+        for (Claim candidate : candidates) {
+            int updated = jdbc.update(CLAIM_SEND, DocumentStatus.SENDING.name(), owner, ts(leaseUntil), ts(now),
+                    candidate.docId(), candidate.version());
+            if (updated == 1) {
+                won.add(new Claim(candidate.docId(), candidate.version() + 1));
+            }
+        }
+        return won;
+    }
+
+    /**
+     * Tells whether a newer document for the same state and FIPS code is GENERATED, SENDING or SENT (FR-15).
+     * Newer means a higher document ID: documents are created run by run, and runs of a state never overlap.
+     *
+     * @param docId the document about to be sent
+     * @return true if it must be superseded
+     */
+    public boolean newerDocumentExists(long docId) {
+        Integer count = jdbc.queryForObject(NEWER_EXISTS, Integer.class, docId, DocumentStatus.GENERATED.name(),
+                DocumentStatus.SENDING.name(), DocumentStatus.SENT.name());
+        return count != null && count > 0;
+    }
+
+    /**
+     * Moves a claimed SENDING document to SENT and records the JMS message ID.
+     *
+     * @param claim the claim held by this node
+     * @param jmsMessageId ID assigned by the broker
+     * @param now database time
+     * @return true if this node still held the claim
+     */
+    public boolean markSent(Claim claim, String jmsMessageId, Instant now) {
+        DocumentStatus.SENDING.requireTransitionTo(DocumentStatus.SENT);
+        return jdbc.update(MARK_SENT, DocumentStatus.SENT.name(), jmsMessageId, ts(now), ts(now), claim.docId(),
+                claim.version()) == 1;
+    }
+
+    /**
+     * Moves a claimed SENDING document to SUPERSEDED, SEND_FAILED or SEND_FAILED_FINAL and clears the lease.
+     *
+     * @param claim the claim held by this node
+     * @param target the new status
+     * @param nextAttemptAt when to retry; {@code null} for final statuses
+     * @param error error text, or {@code null}
+     * @param now database time
+     * @return true if this node still held the claim
+     */
+    public boolean markSendEnded(Claim claim, DocumentStatus target, Instant nextAttemptAt, String error,
+            Instant now) {
+        DocumentStatus.SENDING.requireTransitionTo(target);
+        if (target == DocumentStatus.SENT) {
+            throw new IllegalArgumentException("Use markSent");
+        }
+        return jdbc.update(MARK_FAILED, target.name(), ts(nextAttemptAt), truncate(error), ts(now), claim.docId(),
+                claim.version()) == 1;
+    }
+
+    /**
+     * Re-queues one SEND_FAILED or SEND_FAILED_FINAL document whose content is still stored: SEND_FAILED, due
+     * now, attempts reset (manual retransmit, FR-16).
+     *
+     * @param docId document ID
+     * @param now database time
+     * @return true if the document was re-queued
+     */
+    public boolean requeueForSend(long docId, Instant now) {
+        DocumentStatus.SEND_FAILED_FINAL.requireTransitionTo(DocumentStatus.SEND_FAILED);
+        return jdbc.update(REQUEUE, DocumentStatus.SEND_FAILED.name(), ts(now), RETRANSMIT_NOTE, ts(now), docId,
+                DocumentStatus.SEND_FAILED.name(), DocumentStatus.SEND_FAILED_FINAL.name()) == 1;
+    }
+
+    /**
+     * Re-queues every SEND_FAILED and SEND_FAILED_FINAL document of a run whose content is still stored.
+     *
+     * @param runId run ID
+     * @param now database time
+     * @return number of documents re-queued
+     */
+    public int requeueFailedOfRun(long runId, Instant now) {
+        return jdbc.update(REQUEUE_RUN, DocumentStatus.SEND_FAILED.name(), ts(now), RETRANSMIT_NOTE, ts(now), runId,
+                DocumentStatus.SEND_FAILED.name(), DocumentStatus.SEND_FAILED_FINAL.name());
     }
 
     /**

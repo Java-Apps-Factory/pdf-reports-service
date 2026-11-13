@@ -8,6 +8,10 @@ reporting:
   generation:
     poll-interval: 200ms
     temp-dir: target/fips-reports-test
+  transmission:
+    poll-interval: 200ms
+    in-process: { attempts: 3, initial: 10ms, multiplier: 2.0, max: 40ms }
+    backoff: { initial: 1s, multiplier: 2.0, max: 2s }
   jobs:
     finalizer-interval: 500ms
     lease-sweep-interval: 1s
