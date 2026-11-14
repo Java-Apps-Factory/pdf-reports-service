@@ -13,8 +13,7 @@ import com.example.reporting.tracking.ReportDocument;
 import com.example.reporting.tracking.ReportDocumentRepository;
 import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import com.example.reporting.tracking.Sha256;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -42,7 +41,6 @@ import org.springframework.stereotype.Component;
 public class SendWorker {
 
     private static final Logger LOG = LoggerFactory.getLogger(SendWorker.class);
-    private static final char[] HEX = "0123456789abcdef".toCharArray();
 
     private final ReportDocumentRepository documents;
     private final ReportRunRepository runs;
@@ -144,7 +142,7 @@ public class SendWorker {
         byte[] pdf = content.load(document.getDocId())
                 .orElseThrow(() -> new PermanentTransmissionException("Stored PDF is missing", null));
         String expected = document.getSha256() == null ? "" : document.getSha256().trim();
-        if (!sha256(pdf).equals(expected)) {
+        if (!Sha256.hex(pdf).equals(expected)) {
             throw new PermanentTransmissionException("Stored PDF does not match its SHA-256", null);
         }
         ReportRun run = runs.findById(document.getRunId())
@@ -206,16 +204,4 @@ public class SendWorker {
         return template;
     }
 
-    static String sha256(byte[] bytes) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
-            StringBuilder hex = new StringBuilder(digest.length * 2);
-            for (byte b : digest) {
-                hex.append(HEX[(b >> 4) & 0xF]).append(HEX[b & 0xF]);
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is required on every Java platform", e);
-        }
-    }
 }

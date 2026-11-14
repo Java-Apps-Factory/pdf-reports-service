@@ -192,3 +192,60 @@ path (`SibConnectionFactoryConfig` → `JmsReportTransmitter`).
 | veraPDF reports zero PDF/UA-1 and PDF/A-2a failures on the three sample reports | **Done** — `AccessibilityComplianceTest` (empty category, multi-page category, single row × both flavours: 6 checks, 0 failures) and `ReportComplianceIT` on real seeded reports (51013 with an empty category, 51059 multi-page). Verified with the JDK sRGB stand-in; re-run once `sRGB.icc` is added. PDFs for manual checks: `report-pdf-core/target/pdfua-*.pdf`. |
 | Reading order in the structure tree matches section 12 | **Done** — `StructureTreeTest` (element order, TH scopes, Figure alt text, no placeholders left, parent tree per page, `/Tabs /S`, MarkInfo, metadata, output intent) and `PdfUaTaggingContextTest`. |
 | Manual check with NVDA + Acrobat and PAC (section 12, before go-live) | **Open** — needs the accessibility reviewer. |
+
+## Phase 6 — Hardening
+
+| Date | Decision | Reason |
+|---|---|---|
+| 2026-11-13 | One `observability.ReportingMetrics` component owns the nine meters of section 18; workers and jobs call it. Tags are state, trigger, outcome, classification, kind and status only. `reporting.documents.by.status` gauges are refreshed on every `RunFinalizer` pass (30 s, on the node holding its lock) instead of a separate 60 s job. | One small class instead of meter code spread over the workers; reusing the finalizer pass avoids another scheduled job. |
+| 2026-11-13 | Health: Boot's `db` and `jms` indicators; `management.endpoint.health.probes.enabled=true` with the readiness group `readinessState,db,jms`. Readiness is DOWN until startup (including Flyway) has finished. | Section 18; no custom indicators needed. |
+| 2026-11-13 | Logging: `logging.pattern.level` prints the MDC keys `nodeId`, `runId`, `docId`, `stateCode`, `fipsCode` that the workers already set. Run completion is logged at INFO with document counts per status. | Section 18; no logging framework changes. |
+| 2026-11-13 | `deploy/tomcat/bin/setenv.sh` adds `-Duser.timezone=${REPORT_TZ:-America/New_York}` to the section 16 settings, with `REPORT_TMP` and `REPORT_LOG_DIR` overridable. | The Phase 3 decision: JVM and DB2 server time zones must match. |
+| 2026-11-13 | Optional test suites use JUnit 5 tags: `@Tag("db2")` (`Db2CompatibilityIT`, Testcontainers with `icr.io/db2_community/db2:11.5.9.0`) and `@Tag("perf")` (`PerformanceIT`). Failsafe excludes both by default; profiles `-Pdb2-it` and `-Pperf` select one each. `-Pperf` runs with `-Xmx2g` and without JaCoCo. Testcontainers 1.19.8 is managed through its BOM in the parent POM. | Section 20; tags need no extra plugin configuration per test. |
+| 2026-11-13 | `Db2CompatibilityIT` creates `RPT_RECORD` on DB2 from the h2 migration script (it is a dev-only table) after Flyway has run, inserts 300 fake records and checks a full run reaches COMPLETED with ShedLock on database time. | The real source table does not exist yet; the rest of the schema comes from the common migrations as in production. |
+| 2026-11-13 | Docs: `docs/RUNBOOK.md` (the eleven operational topics of section 18) and `docs/DB2-HANDOFF.md` (user, LOB tablespace, index on the source table, pool size, time zone, growth). | Section 21, Phase 6. |
+
+### Code review (2026-11-13)
+
+Checked against SPEC section 19, CLAUDE.md and common Spring/Java practice. Nothing structural needed changing;
+the review deliberately avoided adding abstractions.
+
+| Finding | Action |
+|---|---|
+| SHA-256 hashing and hex encoding were duplicated in `GenerationWorker` and `SendWorker`. | Fixed: `tracking.Sha256` helper, one test. |
+| `GET /report-runs/{id}/documents` looked up the locality name once per document (up to 200 queries per page). | Fixed: one lookup per FIPS code per page. |
+| `GenerationPoller.freeWorkers()` was unused. | Removed. |
+| `TransientTransmissionException` is not thrown in production code (other JMS errors are classified as transient directly). | Kept: section 17 names it; it is classified correctly if thrown. |
+| `ReportingProperties` (≈650 lines) and `DocumentSpec` (≈490) exceed the ~300-line guideline. | Kept: almost all of it is constructor-bound config groups and builder boilerplate with Javadoc; splitting would only move code. |
+| `DocumentClaimRepository` (≈400 lines) includes three small value classes. | Kept: they belong to its API; moving them would touch many imports for no behaviour change. |
+| `SummaryPainter.paint` and `XmpMetadataWriter.packet` are ~50 lines. | Kept: linear drawing code and a text template; splitting would not make them clearer. |
+| Rules confirmed: constructor injection only; `@Transactional` only on service methods; no transaction held while rendering or sending; JDBC streaming with `FOR READ ONLY`; no record values in logs, metrics, JMS properties or error texts; all times from `DbClock` or the injected `Clock`; patterns used where the spec names them (Template Method composer, Strategy for data provider/formatters/transmitter, Registry, Builder, Decorator pass 2, Observer event, Null Object tagging). | — |
+| **Residual risks** (not fixable by review): `FETCH FIRST ? ROWS ONLY` with a parameter marker and ShedLock's DB2 SQL are only proven on H2 until `-Pdb2-it` runs; the per-cell structure tree keeps heap proportional to rows when tagging is on (see the performance results). | Run `-Pdb2-it` on a machine with Docker; see the Phase 6 performance results. |
+
+### Phase 6 performance results (`mvn -Pperf verify -pl report-service -am`, JDK 11, `-Xmx2g`, tagging on)
+
+Measured on the development MacBook (x86_64, heavily loaded by other processes), H2 in memory, embedded Artemis,
+4 generation and 2 send workers; duration is run start → COMPLETED (generated, stored and sent). Peak heap is the
+highest sampled used heap, garbage included.
+
+| Scenario | Documents | Pages | Total PDF | Duration | Peak heap | Peak temp disk |
+|---|---|---|---|---|---|---|
+| 100,000 records in one FIPS code (51059) | 1 | 4,335 | 31.2 MB | 212 s | 1,093 MB of 2,048 MB | 111 MB |
+| 100,000 records over 133 FIPS codes | 133 | 4,522 | 35.9 MB | 60 s | 1,637 MB of 2,048 MB | 4 MB |
+
+- **NFR-03 (10 minutes with `-Xmx2g`) is met** in both scenarios; the target stays as proposed in section 3.
+- Tagging costs heap, not time: one 50,000-row document peaked at 483 MB tagged vs 66 MB untagged, both about
+  65 s (standalone measurement). The per-cell structure tree is therefore the main heap consumer; 2 GB leaves
+  headroom for the 100,000-row worst case, so `-Xmx2g` in `setenv.sh` must not be lowered.
+- A first attempt of the single-FIPS scenario failed only because the laptop went into clamshell sleep for four
+  hours mid-run (macOS power log); leases expired while the JVM was suspended. The rerun with the machine awake
+  passed. Run the `perf` profile on a server or with the machine kept awake.
+
+### Phase 6 acceptance status
+
+| Criterion | Status |
+|---|---|
+| Metrics, health, MDC logging, `setenv.sh`, `docs/RUNBOOK.md`, DB2 profile and DBA hand-off notes, `perf` profile | **Done** — `ReportingMetrics` (+ `ReportingMetricsTest`, flow IT checks meters, gauges, readiness and liveness), probes and readiness group, MDC log pattern, `deploy/tomcat/bin/setenv.sh`, `docs/RUNBOOK.md`, `docs/DB2-HANDOFF.md`, profiles `db2-it` and `perf`. |
+| The performance test meets NFR-03 or records the measured result | **Done** — see the table above: 212 s and 60 s against a 10-minute target. |
+| The `db2-it` profile passes against the DB2 community image | **Not run** — Docker Desktop is installed but was not running on the build machine, and the image is several GB. Run `mvn -Pdb2-it verify -pl report-service -am` where Docker is available (nightly per section 20). |
+| `mvn verify` passes | **Done** on JDK 11: 82 core + 220 service unit + 38 integration tests, Checkstyle, SpotBugs, JaCoCo. |

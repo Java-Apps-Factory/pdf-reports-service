@@ -16,6 +16,7 @@ import com.example.reporting.tracking.ReportDocument;
 import com.example.reporting.tracking.ReportDocumentRepository;
 import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
+import com.example.reporting.tracking.Sha256;
 import com.example.reporting.transmission.DocumentGeneratedEvent;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -24,7 +25,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.DigestOutputStream;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -46,7 +46,6 @@ public class GenerationWorker {
 
     private static final Logger LOG = LoggerFactory.getLogger(GenerationWorker.class);
     private static final double LEASE_WARNING_SHARE = 0.8;
-    private static final char[] HEX = "0123456789abcdef".toCharArray();
     private static final String UNKNOWN_STATE = "unknown";
 
     private final ReportDocumentRepository documents;
@@ -132,7 +131,7 @@ public class GenerationWorker {
     private void render(Claim claim, ReportDocument document, ReportRun run, Path file, long startedNanos)
             throws IOException {
         Files.createDirectories(tempDir);
-        MessageDigest digest = sha256();
+        MessageDigest digest = Sha256.newDigest();
         RenderResult result;
         try (OutputStream out = new DigestOutputStream(new BufferedOutputStream(Files.newOutputStream(file)),
                 digest)) {
@@ -145,7 +144,7 @@ public class GenerationWorker {
                     .build(), out);
         }
         GeneratedFacts facts = new GeneratedFacts(result.rowsWritten(), result.pageCount(), Files.size(file),
-                hex(digest.digest()));
+                Sha256.toHex(digest.digest()));
         Boolean stored = transaction.execute(status -> {
             content.store(document.getDocId(), file);
             if (!claims.markGenerated(claim, facts, dbClock.now())) {
@@ -213,19 +212,4 @@ public class GenerationWorker {
         }
     }
 
-    private static MessageDigest sha256() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is required on every Java platform", e);
-        }
-    }
-
-    static String hex(byte[] bytes) {
-        StringBuilder hex = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            hex.append(HEX[(b >> 4) & 0xF]).append(HEX[b & 0xF]);
-        }
-        return hex.toString();
-    }
 }

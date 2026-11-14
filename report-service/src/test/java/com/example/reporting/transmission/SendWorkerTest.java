@@ -23,6 +23,7 @@ import com.example.reporting.tracking.ReportDocument;
 import com.example.reporting.tracking.ReportDocumentRepository;
 import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
+import com.example.reporting.tracking.Sha256;
 import com.example.reporting.tracking.TriggerType;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
@@ -65,7 +66,7 @@ class SendWorkerTest {
         ReflectionTestUtils.setField(run, "runId", 3L);
         document = ReportDocument.create(3L, "VA", "51059", DocumentStatus.PENDING, null, NOW);
         ReflectionTestUtils.setField(document, "docId", 7L);
-        ReflectionTestUtils.setField(document, "sha256", SendWorker.sha256(PDF));
+        ReflectionTestUtils.setField(document, "sha256", Sha256.hex(PDF));
         ReflectionTestUtils.setField(document, "recordCount", 1240);
         ReflectionTestUtils.setField(document, "pageCount", 31);
         ReflectionTestUtils.setField(document, "generatedAt", Instant.parse("2026-11-10T07:03:11.456Z"));
@@ -97,7 +98,7 @@ class SendWorkerTest {
         verify(jms).setStringProperty(ReportMessageProperties.DATA_AS_OF, "2026-11-10T02:00:00-05:00");
         verify(jms).setIntProperty(ReportMessageProperties.RECORD_COUNT, 1240);
         verify(jms).setIntProperty(ReportMessageProperties.PAGE_COUNT, 31);
-        verify(jms).setStringProperty(ReportMessageProperties.SHA256, SendWorker.sha256(PDF));
+        verify(jms).setStringProperty(ReportMessageProperties.SHA256, Sha256.hex(PDF));
         verify(jms).setStringProperty(ReportMessageProperties.CONTENT_TYPE, "application/pdf");
         verify(jms).setIntProperty(ReportMessageProperties.SCHEMA_VERSION, 1);
         assertThat(message.getValue().size()).isEqualTo(PDF.length);

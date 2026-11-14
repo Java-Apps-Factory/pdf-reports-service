@@ -13,6 +13,8 @@ import com.example.reporting.tracking.DocumentStatus;
 import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.TriggerType;
 import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import javax.validation.Valid;
 import javax.validation.constraints.Max;
@@ -144,9 +146,12 @@ public class ReportRunController {
         if (queries.run(runId).isEmpty()) {
             throw new ApiExceptions.NotFound("Run " + runId + " does not exist.");
         }
+        // One locality lookup per FIPS code on the page, not per document.
+        Map<String, String> localities = new HashMap<>();
         return PageResponse.of(queries.documents(runId, Optional.ofNullable(status), PageRequest.of(page, size)),
                 document -> mapper.document(document,
-                        queries.localityName(document.getStateCode(), document.getFipsCode()).orElse(null),
+                        localities.computeIfAbsent(document.getFipsCode(), fips ->
+                                queries.localityName(document.getStateCode(), fips).orElse(null)),
                         document.getContentPurgedAt() == null && document.getGeneratedAt() != null));
     }
 }

@@ -74,7 +74,7 @@ class SibConnectionFactoryConfigTest {
                 base.getGeneration(), base.getTransmission(), base.getRetention(),
                 new ReportingProperties.Sib(bus, "was-staging:7276:BootstrapBasicMessaging", "InboundBasicMessaging",
                         user, user.isEmpty() ? "" : "secret"),
-                base.getFonts(), "classpath:color/sRGB.icc", false, Map.of(), new ReportingProperties.Jobs(true, Duration.ofSeconds(30),
-                        Duration.ofSeconds(60)), base.getDev());
+                base.getFonts(), "classpath:color/sRGB.icc", false, Map.of(),
+                new ReportingProperties.Jobs(true, Duration.ofSeconds(30), Duration.ofSeconds(60)), base.getDev());
     }
 }

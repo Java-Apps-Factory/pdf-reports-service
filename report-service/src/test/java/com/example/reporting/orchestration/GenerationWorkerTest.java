@@ -32,9 +32,11 @@ import com.example.reporting.tracking.ReportDocument;
 import com.example.reporting.tracking.ReportDocumentRepository;
 import com.example.reporting.tracking.ReportRun;
 import com.example.reporting.tracking.ReportRunRepository;
+import com.example.reporting.tracking.Sha256;
 import com.example.reporting.tracking.TriggerType;
 import com.example.reporting.transmission.DocumentGeneratedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -235,7 +237,9 @@ class GenerationWorkerTest {
 
     @Test
     void hexEncodesBytes() {
-        assertThat(GenerationWorker.hex(new byte[] {0, 15, (byte) 255})).isEqualTo("000fff");
+        assertThat(Sha256.toHex(new byte[] {0, 15, (byte) 255})).isEqualTo("000fff");
+        assertThat(Sha256.hex("test".getBytes(StandardCharsets.US_ASCII)))
+                .isEqualTo("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
     }
 
     private void attempts(int value) {

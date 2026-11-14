@@ -105,15 +105,6 @@ public class GenerationPoller implements SchedulingConfigurer {
         return claimedTotal.get();
     }
 
-    /**
-     * Returns the number of idle generation threads.
-     *
-     * @return free workers
-     */
-    public int freeWorkers() {
-        return freeWorkers.availablePermits();
-    }
-
     private void pollSafely() {
         try {
             poll();
